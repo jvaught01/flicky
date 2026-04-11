@@ -33,9 +33,11 @@ export function OverlayApp() {
   const [pointingPhrase, setPointingPhrase] = useState('');
   const [cursorMode, setCursorMode] = useState<CursorMode>('following');
   const [companionPos, setCompanionPos] = useState({ x: 0, y: 0 });
+  const [isCursorOnThisDisplay, setIsCursorOnThisDisplay] = useState(false);
   const displayRef = useRef<{ id: number; bounds: { x: number; y: number; width: number; height: number } } | null>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const returnAnimRef = useRef<number | null>(null);
+  const responseClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cursorModeRef = useRef<CursorMode>('following');
   const cursorPosRef = useRef({ x: 0, y: 0 });
   const companionPosRef = useRef({ x: 0, y: 0 });
@@ -91,16 +93,30 @@ export function OverlayApp() {
     const unsubStart = window.flicky.onStartCapture(() => startMic());
     const unsubStop = window.flicky.onStopCapture(() => stopMic());
 
-    // Play TTS audio from main process
+    // Play TTS audio from main process, then clear bubble after playback
     const unsubPlayAudio = window.flicky.onPlayAudio(async (audioData) => {
       try {
         const blob = new Blob([audioData], { type: 'audio/mpeg' });
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
-        audio.onended = () => URL.revokeObjectURL(url);
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          // Clear speech bubble 5 seconds after TTS finishes
+          if (responseClearTimerRef.current) clearTimeout(responseClearTimerRef.current);
+          responseClearTimerRef.current = setTimeout(() => {
+            setResponseText('');
+            responseClearTimerRef.current = null;
+          }, 5000);
+        };
         await audio.play();
       } catch (err) {
         console.error('[Flicky] Audio playback failed:', err);
+        // If TTS fails, fall back to clearing after 5 seconds
+        if (responseClearTimerRef.current) clearTimeout(responseClearTimerRef.current);
+        responseClearTimerRef.current = setTimeout(() => {
+          setResponseText('');
+          responseClearTimerRef.current = null;
+        }, 5000);
       }
     });
 
@@ -174,16 +190,28 @@ export function OverlayApp() {
       window.flicky.onVoiceStateChanged(setVoiceState),
       window.flicky.onCursorPosition((pos) => {
         const bounds = displayRef.current?.bounds;
-        const local = bounds
-          ? { x: pos.x - bounds.x, y: pos.y - bounds.y }
-          : pos;
-        setCursorPos(local);
+        if (bounds) {
+          const onThis =
+            pos.x >= bounds.x && pos.x < bounds.x + bounds.width &&
+            pos.y >= bounds.y && pos.y < bounds.y + bounds.height;
+          setIsCursorOnThisDisplay(onThis);
+          setCursorPos({ x: pos.x - bounds.x, y: pos.y - bounds.y });
+        } else {
+          setIsCursorOnThisDisplay(true);
+          setCursorPos(pos);
+        }
       }),
       window.flicky.onAiResponseChunk((chunk) => {
         setResponseText((prev) => prev + chunk);
       }),
       window.flicky.onAiResponseComplete(() => {
-        // Response stays visible until next interaction
+        // Bubble stays visible until TTS playback ends + 5 seconds.
+        // If no TTS key is set, fall back to clearing after 8 seconds.
+        if (responseClearTimerRef.current) clearTimeout(responseClearTimerRef.current);
+        responseClearTimerRef.current = setTimeout(() => {
+          setResponseText('');
+          responseClearTimerRef.current = null;
+        }, 8000);
       }),
       window.flicky.onElementDetected((el) => {
         if (el) {
@@ -226,6 +254,7 @@ export function OverlayApp() {
       unsubs.forEach((u) => u());
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
       if (returnAnimRef.current) cancelAnimationFrame(returnAnimRef.current);
+      if (responseClearTimerRef.current) clearTimeout(responseClearTimerRef.current);
     };
   }, [setCursorModeSync, setCompanionPosSync, startReturnAnimation]);
 
@@ -234,6 +263,10 @@ export function OverlayApp() {
     if (voiceState === 'listening') {
       setResponseText('');
       setDetectedElement(null);
+      if (responseClearTimerRef.current) {
+        clearTimeout(responseClearTimerRef.current);
+        responseClearTimerRef.current = null;
+      }
       // Cancel any hold/return and snap back to following
       if (holdTimerRef.current) {
         clearTimeout(holdTimerRef.current);
@@ -250,6 +283,10 @@ export function OverlayApp() {
   const isNavigating = cursorMode === 'navigating';
   const isHolding = cursorMode === 'holding';
 
+  // Only render the companion on the display where the cursor is,
+  // or on the display being pointed at (navigating/holding).
+  const showOnThisDisplay = isCursorOnThisDisplay || isNavigating || isHolding;
+
   // Cursor transition style depends on mode
   const cursorTransition = isNavigating
     ? 'left 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), top 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)'
@@ -259,54 +296,58 @@ export function OverlayApp() {
 
   return (
     <div className="overlay-container">
-      {/* Blue triangle cursor — companion cursor with independent position */}
-      <div
-        className={`cursor-triangle ${isNavigating || isHolding ? 'navigating' : ''}`}
-        style={{
-          left: companionPos.x,
-          top: companionPos.y,
-          transition: cursorTransition,
-        }}
-      >
-        <svg viewBox="0 0 24 28" xmlns="http://www.w3.org/2000/svg">
-          <polygon points="12,0 24,28 0,28" />
-        </svg>
-      </div>
+      {showOnThisDisplay && (
+        <>
+          {/* Blue triangle cursor — companion cursor with independent position */}
+          <div
+            className={`cursor-triangle ${isNavigating || isHolding ? 'navigating' : ''}`}
+            style={{
+              left: companionPos.x,
+              top: companionPos.y,
+              transition: cursorTransition,
+            }}
+          >
+            <svg viewBox="0 0 24 28" xmlns="http://www.w3.org/2000/svg">
+              <polygon points="12,0 24,28 0,28" />
+            </svg>
+          </div>
 
-      {/* Waveform during listening */}
-      {voiceState === 'listening' && (
-        <Waveform x={companionPos.x + 30} y={companionPos.y - 4} />
-      )}
+          {/* Waveform during listening */}
+          {voiceState === 'listening' && (
+            <Waveform x={companionPos.x + 30} y={companionPos.y - 4} />
+          )}
 
-      {/* Spinner during processing */}
-      {voiceState === 'processing' && (
-        <div
-          className="processing-spinner"
-          style={{ left: companionPos.x + 30, top: companionPos.y }}
-        />
-      )}
+          {/* Spinner during processing */}
+          {voiceState === 'processing' && (
+            <div
+              className="processing-spinner"
+              style={{ left: companionPos.x + 30, top: companionPos.y }}
+            />
+          )}
 
-      {/* Speech bubble follows the companion cursor */}
-      {responseText && (
-        <div
-          className="speech-bubble"
-          style={{ left: companionPos.x + 30, top: companionPos.y - 10 }}
-        >
-          {responseText}
-        </div>
-      )}
+          {/* Speech bubble follows the companion cursor */}
+          {responseText && (
+            <div
+              className="speech-bubble"
+              style={{ left: companionPos.x + 30, top: companionPos.y - 10 }}
+            >
+              {responseText}
+            </div>
+          )}
 
-      {/* Pointing label — shown while navigating or holding at target */}
-      {(isNavigating || isHolding) && pointingPhrase && (
-        <div
-          className="pointing-bubble"
-          style={{
-            left: companionPos.x + 30,
-            top: companionPos.y - 10,
-          }}
-        >
-          {pointingPhrase}
-        </div>
+          {/* Pointing label — shown while navigating or holding at target */}
+          {(isNavigating || isHolding) && pointingPhrase && (
+            <div
+              className="pointing-bubble"
+              style={{
+                left: companionPos.x + 30,
+                top: companionPos.y - 10,
+              }}
+            >
+              {pointingPhrase}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
