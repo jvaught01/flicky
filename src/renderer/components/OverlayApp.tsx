@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { VoiceState, DetectedElement } from '../../shared/types';
+import { CompanionOrb } from './CompanionOrb';
 
 const POINTING_PHRASES = [
   'right here!',
@@ -44,8 +45,9 @@ export function OverlayApp() {
 
   // ── Mic capture ──────────────────────────────────────────────────────
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const scriptNodeRef = useRef<ScriptProcessorNode | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  const scriptNodeRef  = useRef<ScriptProcessorNode | null>(null);
+  const audioCtxRef    = useRef<AudioContext | null>(null);
+  const analyserRef    = useRef<AnalyserNode | null>(null);
 
   useEffect(() => {
     const startMic = async () => {
@@ -58,6 +60,13 @@ export function OverlayApp() {
         const ctx = new AudioContext({ sampleRate: 16000 });
         audioCtxRef.current = ctx;
         const source = ctx.createMediaStreamSource(stream);
+
+        // AnalyserNode — feeds real-time frequency data to CompanionOrb
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.80;
+        source.connect(analyser);
+        analyserRef.current = analyser;
 
         // ScriptProcessor to get raw PCM and send to main
         const processor = ctx.createScriptProcessor(4096, 1, 1);
@@ -84,6 +93,7 @@ export function OverlayApp() {
     const stopMic = () => {
       scriptNodeRef.current?.disconnect();
       scriptNodeRef.current = null;
+      analyserRef.current = null;
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
       mediaStreamRef.current = null;
       audioCtxRef.current?.close();
@@ -298,38 +308,28 @@ export function OverlayApp() {
     <div className="overlay-container">
       {showOnThisDisplay && (
         <>
-          {/* Blue triangle cursor — companion cursor with independent position */}
+          {/* Companion orb — replaces triangle; audio-reactive, state-aware */}
           <div
-            className={`cursor-triangle ${isNavigating || isHolding ? 'navigating' : ''}`}
+            className="companion-orb-anchor"
             style={{
-              left: companionPos.x,
-              top: companionPos.y,
+              left:       companionPos.x,
+              top:        companionPos.y,
               transition: cursorTransition,
             }}
           >
-            <svg viewBox="0 0 24 28" xmlns="http://www.w3.org/2000/svg">
-              <polygon points="12,0 24,28 0,28" />
-            </svg>
+            <CompanionOrb
+              voiceState={voiceState}
+              isNavigating={isNavigating}
+              isHolding={isHolding}
+              analyser={analyserRef.current}
+            />
           </div>
 
-          {/* Waveform during listening */}
-          {voiceState === 'listening' && (
-            <Waveform x={companionPos.x + 30} y={companionPos.y - 4} />
-          )}
-
-          {/* Spinner during processing */}
-          {voiceState === 'processing' && (
-            <div
-              className="processing-spinner"
-              style={{ left: companionPos.x + 30, top: companionPos.y }}
-            />
-          )}
-
-          {/* Speech bubble follows the companion cursor */}
+          {/* Speech bubble — sits to the right of the 44px orb (8px gap + 44px + 8px margin) */}
           {responseText && (
             <div
               className="speech-bubble"
-              style={{ left: companionPos.x + 30, top: companionPos.y - 10 }}
+              style={{ left: companionPos.x + 60, top: companionPos.y - 10 }}
             >
               {responseText}
             </div>
@@ -340,7 +340,7 @@ export function OverlayApp() {
             <div
               className="pointing-bubble"
               style={{
-                left: companionPos.x + 30,
+                left: companionPos.x + 60,
                 top: companionPos.y - 10,
               }}
             >
@@ -353,23 +353,3 @@ export function OverlayApp() {
   );
 }
 
-function Waveform({ x, y }: { x: number; y: number }) {
-  const [bars, setBars] = useState<number[]>(Array(12).fill(3));
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setBars((prev) =>
-        prev.map(() => 3 + Math.random() * 18),
-      );
-    }, 70);
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div className="waveform" style={{ left: x, top: y }}>
-      {bars.map((height, i) => (
-        <div key={i} className="waveform-bar" style={{ height }} />
-      ))}
-    </div>
-  );
-}
