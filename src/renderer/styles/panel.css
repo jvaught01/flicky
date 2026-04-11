@@ -249,6 +249,30 @@
   color: var(--accent);
 }
 
+/* ── Voice Select ───────────────────────────────────────────────────── */
+
+.voice-select {
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-md) center;
+  padding-right: calc(var(--space-md) * 2 + 10px);
+}
+
+.voice-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* ── Shortcut Display ───────────────────────────────────────────────── */
 
 .shortcut-display {

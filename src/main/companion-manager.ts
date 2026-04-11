@@ -50,7 +50,7 @@ export class CompanionManager {
   constructor(callbacks: CompanionCallbacks) {
     this.callbacks = callbacks;
     this.claude = new ClaudeAPI();
-    this.tts = new ElevenLabsTTS();
+    this.tts = new ElevenLabsTTS(settingsStore.get('selectedVoiceId'));
 
     analytics.initAnalytics('', 'https://us.i.posthog.com');
     analytics.trackAppOpened();
@@ -68,6 +68,12 @@ export class CompanionManager {
 
   setGroqModel(model: GroqTranscriptionModel): void {
     settingsStore.set('groqTranscriptionModel', model);
+    this.callbacks.onSettingsChanged(this.getSettings());
+  }
+
+  setVoice(voiceId: string): void {
+    settingsStore.set('selectedVoiceId', voiceId);
+    this.tts.setVoiceId(voiceId);
     this.callbacks.onSettingsChanged(this.getSettings());
   }
 
@@ -106,6 +112,17 @@ export class CompanionManager {
   deleteApiKey(name: ApiKeyName): void {
     keyStore.deleteApiKey(name);
     this.callbacks.onSettingsChanged(this.getSettings());
+  }
+
+  async testTts(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const audioBuffer = await this.tts.synthesize("Hi, I'm Flicky. Text to speech is working!");
+      this.callbacks.onPlayAudio(audioBuffer);
+      return { ok: true };
+    } catch (err) {
+      console.error('[Flicky] TTS test failed:', err);
+      return { ok: false, error: String(err) };
+    }
   }
 
   getApiKeyStatus(): Record<ApiKeyName, boolean> {

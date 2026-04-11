@@ -162,6 +162,8 @@ app.whenReady().then(() => {
   ipcMain.on(IPC.SET_API_KEY, (_e, name, value) => companion.setApiKey(name, value));
   ipcMain.on(IPC.DELETE_API_KEY, (_e, name) => companion.deleteApiKey(name));
   ipcMain.handle(IPC.GET_API_KEY_STATUS, () => companion.getApiKeyStatus());
+  ipcMain.handle(IPC.TEST_TTS, () => companion.testTts());
+  ipcMain.on(IPC.SET_VOICE, (_e, voiceId) => companion.setVoice(voiceId));
 
   // Audio capture: relay chunks from overlay renderer to companion
   ipcMain.on(AUDIO_IPC.AUDIO_CHUNK, (_e, buffer: Buffer) => {

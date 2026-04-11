@@ -14,6 +14,7 @@ export interface StoredSettings {
   isClickyCursorEnabled: boolean;
   transcriptionProvider: TranscriptionProviderType;
   onboardingComplete: boolean;
+  selectedVoiceId: string;
 }
 
 const DEFAULTS: StoredSettings = {
@@ -22,6 +23,7 @@ const DEFAULTS: StoredSettings = {
   isClickyCursorEnabled: true,
   transcriptionProvider: 'groq',
   onboardingComplete: false,
+  selectedVoiceId: 'cgSgspJ2msm6clMCkdW9',
 };
 
 function getFilePath(): string {

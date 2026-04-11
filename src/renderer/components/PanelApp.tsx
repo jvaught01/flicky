@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { VoiceState, FlickySettings, ClaudeModel, GroqTranscriptionModel, ApiKeyName } from '../../shared/types';
+import { ELEVENLABS_VOICES } from '../../shared/types';
 
 const STATUS_LABELS: Record<VoiceState, string> = {
   idle: 'Ready',
@@ -116,6 +117,24 @@ export function PanelApp() {
           </div>
         )}
 
+        {/* ElevenLabs Voice Picker */}
+        {settings.apiKeyStatus.elevenlabs && (
+          <div>
+            <div className="section-label">Voice</div>
+            <select
+              className="voice-select"
+              value={settings.selectedVoiceId}
+              onChange={(e) => window.flicky.setVoice(e.target.value)}
+            >
+              {ELEVENLABS_VOICES.map((v) => (
+                <option key={v.voiceId} value={v.voiceId}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Groq Model Picker */}
         {settings.apiKeyStatus.groq && (
           <div>
@@ -132,12 +151,6 @@ export function PanelApp() {
                 model="whisper-large-v3-turbo"
                 active={settings.groqTranscriptionModel === 'whisper-large-v3-turbo'}
                 onClick={() => window.flicky.setGroqModel('whisper-large-v3-turbo')}
-              />
-              <GroqModelButton
-                label="English"
-                model="distil-whisper-large-v3-en"
-                active={settings.groqTranscriptionModel === 'distil-whisper-large-v3-en'}
-                onClick={() => window.flicky.setGroqModel('distil-whisper-large-v3-en')}
               />
             </div>
           </div>
@@ -191,6 +204,7 @@ function ApiKeyRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState('');
+  const [ttsStatus, setTtsStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
 
   const handleSave = () => {
     if (value.trim()) {
@@ -202,6 +216,7 @@ function ApiKeyRow({
 
   const handleDelete = () => {
     window.flicky.deleteApiKey(name);
+    setTtsStatus('idle');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -210,6 +225,13 @@ function ApiKeyRow({
       setValue('');
       setEditing(false);
     }
+  };
+
+  const handleTestTts = async () => {
+    setTtsStatus('testing');
+    const result = await window.flicky.testTts();
+    setTtsStatus(result.ok ? 'ok' : 'error');
+    setTimeout(() => setTtsStatus('idle'), 4000);
   };
 
   return (
@@ -222,6 +244,15 @@ function ApiKeyRow({
         {isSet ? (
           <div className="api-key-actions">
             <span className="permission-badge granted">Saved</span>
+            {name === 'elevenlabs' && (
+              <button
+                className="api-key-action-btn"
+                onClick={handleTestTts}
+                disabled={ttsStatus === 'testing'}
+              >
+                {ttsStatus === 'testing' ? '...' : ttsStatus === 'ok' ? 'OK' : ttsStatus === 'error' ? 'Failed' : 'Test'}
+              </button>
+            )}
             <button className="api-key-action-btn" onClick={() => setEditing(true)}>
               Change
             </button>

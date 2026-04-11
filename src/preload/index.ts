@@ -41,6 +41,12 @@ const api = {
   getApiKeyStatus: (): Promise<Record<ApiKeyName, boolean>> =>
     ipcRenderer.invoke(IPC.GET_API_KEY_STATUS),
 
+  testTts: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.TEST_TTS),
+
+  setVoice: (voiceId: string): void =>
+    ipcRenderer.send(IPC.SET_VOICE, voiceId),
+
   // ── Lifecycle ──────────────────────────────────────────────────────
   openExternal: (url: string): void =>
     ipcRenderer.send(IPC.OPEN_EXTERNAL, url),

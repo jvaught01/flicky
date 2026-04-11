@@ -11,7 +11,7 @@ const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 export class ElevenLabsTTS {
   private voiceId: string;
 
-  constructor(voiceId = 'pMsXgVXv3BLzUgSXRplE') {
+  constructor(voiceId = 'cgSgspJ2msm6clMCkdW9') {
     this.voiceId = voiceId;
   }
 
