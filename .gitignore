@@ -7,3 +7,4 @@ release/
 Thumbs.db
 *.log
 bun.lock
+.changelog/
