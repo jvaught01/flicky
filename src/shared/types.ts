@@ -131,6 +131,7 @@ export interface FlickySettings {
   // General
   isClickyCursorEnabled: boolean;
   launchAtLogin: boolean;
+  pushToTalkShortcut: string;
 
   // Lifecycle
   onboardingComplete: boolean;
@@ -152,6 +153,7 @@ export const DEFAULT_SETTINGS: FlickySettings = {
 
   isClickyCursorEnabled: true,
   launchAtLogin: false,
+  pushToTalkShortcut: 'Ctrl+Alt+X',
 
   onboardingComplete: false,
   apiKeyStatus: { anthropic: false, elevenlabs: false, groq: false },
@@ -185,6 +187,7 @@ export const IPC = {
   SET_GROQ_MODEL: 'set-groq-model',
   TOGGLE_CURSOR: 'toggle-cursor',
   SET_LAUNCH_AT_LOGIN: 'set-launch-at-login',
+  SET_PUSH_TO_TALK_SHORTCUT: 'set-push-to-talk-shortcut',
   GET_SETTINGS: 'get-settings',
   GET_PERMISSIONS: 'get-permissions',
   REQUEST_PERMISSION: 'request-permission',

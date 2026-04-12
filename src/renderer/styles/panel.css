@@ -527,7 +527,90 @@ body {
   font-size: 11.5px; color: var(--fl-dim); margin-top: 10px;
 }
 
-/* ── Tour card ──────────────────────────────────────────────────── */
+/* ── Home tour ──────────────────────────────────────────────────── */
+.tour {
+  margin-top: 32px;
+}
+.tour-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 16px; margin-bottom: 16px;
+}
+.tour-heading {
+  font-family: 'Geist', system-ui, sans-serif;
+  font-weight: 700; font-size: 22px; letter-spacing: -0.025em;
+  color: var(--fl-ink); margin: 0;
+}
+.tour-sub {
+  font-size: 13px; color: var(--fl-muted); margin: 4px 0 0; line-height: 1.5;
+}
+
+.tour-steps {
+  list-style: none; padding: 0; margin: 0;
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+}
+
+.tour-step {
+  display: flex; gap: 16px; align-items: flex-start;
+  background: var(--fl-surface);
+  border: 1px solid var(--fl-border);
+  border-radius: 16px;
+  padding: 20px 22px;
+}
+.tour-num {
+  font-family: 'Geist', system-ui, sans-serif;
+  font-weight: 800; font-size: 22px; letter-spacing: -0.03em;
+  color: var(--fl-dim);
+  line-height: 1;
+  flex-shrink: 0;
+  width: 32px;
+}
+.tour-body { flex: 1; }
+.tour-body h3 {
+  font-family: 'Geist', system-ui, sans-serif;
+  font-weight: 700; font-size: 14.5px; letter-spacing: -0.02em;
+  color: var(--fl-ink);
+  margin: 0 0 6px;
+}
+.tour-body p {
+  font-size: 13px; line-height: 1.55;
+  color: var(--fl-muted);
+  margin: 0;
+}
+.tour-body kbd {
+  font-family: 'Geist Mono', monospace; font-size: 11px;
+  padding: 2px 7px; border-radius: 6px;
+  background: var(--fl-surface-2);
+  border: 1px solid var(--fl-border-strong);
+  color: var(--fl-ink);
+  margin: 0 1px;
+}
+.tour-body .plus {
+  color: var(--fl-dim); font-family: 'Geist Mono', monospace;
+  font-size: 11px; margin: 0 2px;
+}
+.tour-body .link {
+  background: none; border: none; padding: 0;
+  color: var(--fl-ink); font: inherit; font-weight: 600;
+  cursor: pointer; border-bottom: 1px solid var(--fl-border-strong);
+}
+.tour-body .link:hover { border-color: var(--fl-ink); }
+
+/* ── Shortcut capture mode ─────────────────────────────────────── */
+.shortcut-edit.capture {
+  background: var(--fl-ink);
+  border-color: var(--fl-ink);
+}
+.shortcut-edit.capture .keys .dim {
+  font-size: 11px; color: rgba(255,255,255,0.5);
+}
+.shortcut-edit.capture kbd {
+  background: rgba(255,255,255,0.15);
+  border-color: rgba(255,255,255,0.3);
+  color: #fff;
+}
+.shortcut-edit.capture .rec { color: rgba(255,255,255,0.7); }
+
+/* ── Tour card (legacy — kept for General removal cleanup) ─────── */
 .tour-card {
   display: flex; align-items: center; gap: 14px;
   padding: 14px 16px;

@@ -29,6 +29,7 @@ export interface StoredSettings {
 
   isClickyCursorEnabled: boolean;
   launchAtLogin: boolean;
+  pushToTalkShortcut: string;
 
   onboardingComplete: boolean;
 }
@@ -48,6 +49,7 @@ const DEFAULTS: StoredSettings = {
 
   isClickyCursorEnabled: true,
   launchAtLogin: false,
+  pushToTalkShortcut: 'Ctrl+Alt+X',
 
   onboardingComplete: false,
 };

@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import type { FlickySettings, MemoryStats } from '../../../shared/types';
+import { ShortcutCapture } from './ShortcutCapture';
 
 interface GeneralTabProps {
   settings: FlickySettings;
@@ -23,19 +25,23 @@ function formatRelative(ts: number | null): string {
 }
 
 export function GeneralTab({ settings, memory }: GeneralTabProps) {
+  const [editingShortcut, setEditingShortcut] = useState(false);
+
   const tokens = memory?.tokens ?? 0;
   const budget = memory?.tokenBudget ?? 250_000;
   const pct = Math.min(100, (tokens / budget) * 100);
   const healthLabel = pct < 60 ? 'healthy' : pct < 85 ? 'getting full' : 'near cap';
   const healthColor =
-    pct < 60 ? 'var(--fl-green)' : pct < 85 ? 'var(--fl-amber-text)' : 'var(--fl-peach-deep)';
+    pct < 60 ? 'var(--fl-ok)' : pct < 85 ? 'var(--fl-warn)' : 'var(--fl-danger)';
+
+  const shortcutKeys = settings.pushToTalkShortcut.split('+').filter(Boolean);
 
   return (
     <>
       <h1 className="main-h1">
         General<em>.</em>
       </h1>
-      <p className="main-lead">Shortcuts, memory, the companion cursor, and the welcome tour.</p>
+      <p className="main-lead">Shortcuts, memory, and the companion cursor.</p>
 
       <div className="section">
         <div className="section-title" style={{ marginBottom: 10 }}>Shortcut</div>
@@ -44,13 +50,24 @@ export function GeneralTab({ settings, memory }: GeneralTabProps) {
             <div className="row-t">Push to talk</div>
             <div className="row-s">hold to speak from anywhere on your machine</div>
           </div>
-          <div className="shortcut-edit">
-            <div className="keys">
-              <kbd>Ctrl</kbd>
-              <kbd>Alt</kbd>
-              <kbd>X</kbd>
+          {editingShortcut ? (
+            <ShortcutCapture
+              onSave={(accel) => {
+                window.flicky.setPushToTalkShortcut(accel);
+                setEditingShortcut(false);
+              }}
+              onCancel={() => setEditingShortcut(false)}
+            />
+          ) : (
+            <div className="shortcut-edit">
+              <div className="keys">
+                {shortcutKeys.map((k, i) => (
+                  <kbd key={`${k}-${i}`}>{k}</kbd>
+                ))}
+              </div>
+              <span className="rec" onClick={() => setEditingShortcut(true)}>edit</span>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -105,20 +122,6 @@ export function GeneralTab({ settings, memory }: GeneralTabProps) {
             onClick={() => window.flicky.setLaunchAtLogin(!settings.launchAtLogin)}
             aria-label="Toggle launch at login"
           />
-        </div>
-      </div>
-
-      <div className="section">
-        <div className="section-title" style={{ marginBottom: 14 }}>Tour</div>
-        <div className="tour-card">
-          <div className="tour-icon">F</div>
-          <div className="tour-meta">
-            <div className="tour-title">Replay the welcome tour</div>
-            <div className="tour-sub">
-              A one-minute walkthrough of what Flicky can do and how to use it.
-            </div>
-          </div>
-          <button className="btn xs" onClick={() => window.flicky.replayOnboarding()}>Play</button>
         </div>
       </div>
     </>

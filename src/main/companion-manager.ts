@@ -49,6 +49,7 @@ export class CompanionManager {
   private voiceState: VoiceState = 'idle';
   private lastScreenshots: ScreenCapture[] = [];
   private isRecording = false;
+  private reRegisterShortcut: ((accel: string) => boolean) | null = null;
 
   constructor(callbacks: CompanionCallbacks) {
     this.callbacks = callbacks;
@@ -112,6 +113,27 @@ export class CompanionManager {
 
   toggleCursor(enabled: boolean): void {
     settingsStore.set('isClickyCursorEnabled', enabled);
+    this.emitSettings();
+  }
+
+  setShortcutReRegister(fn: (accel: string) => boolean): void {
+    this.reRegisterShortcut = fn;
+  }
+
+  setPushToTalkShortcut(accelerator: string): void {
+    const previous = settingsStore.get('pushToTalkShortcut');
+    if (!this.reRegisterShortcut) {
+      settingsStore.set('pushToTalkShortcut', accelerator);
+      this.emitSettings();
+      return;
+    }
+    const ok = this.reRegisterShortcut(accelerator);
+    if (ok) {
+      settingsStore.set('pushToTalkShortcut', accelerator);
+    } else {
+      console.warn('[Flicky] Failed to register shortcut', accelerator, '— reverting to', previous);
+      this.reRegisterShortcut(previous);
+    }
     this.emitSettings();
   }
 

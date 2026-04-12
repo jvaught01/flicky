@@ -1,11 +1,12 @@
 import type { FlickySettings, VoiceState, MemoryStats } from '../../../shared/types';
 import { Waveform } from '../Waveform';
+import { Tour } from './Tour';
 
 interface HomeTabProps {
   voiceState: VoiceState;
   settings: FlickySettings;
   memory: MemoryStats | null;
-  onNavigate: (tab: 'mind' | 'voice' | 'ear' | 'general') => void;
+  onNavigate: (tab: 'chats' | 'mind' | 'voice' | 'ear' | 'general') => void;
 }
 
 function formatTokens(n: number): string {
@@ -137,6 +138,8 @@ export function HomeTab({ voiceState, settings, memory, onNavigate }: HomeTabPro
           )}
         </div>
       </div>
+
+      <Tour shortcut={settings.pushToTalkShortcut} onNavigate={onNavigate} />
     </>
   );
 }

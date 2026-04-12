@@ -114,27 +114,45 @@ app.whenReady().then(() => {
   // a short window (meaning the key was released).
   let pttDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let pttActive = false;
+  let currentShortcut = '';
 
-  globalShortcut.register('Ctrl+Alt+X', () => {
-    // Clear any pending "key released" timer
+  const pttHandler = () => {
     if (pttDebounceTimer) {
       clearTimeout(pttDebounceTimer);
       pttDebounceTimer = null;
     }
-
-    // Start recording on first press
     if (!pttActive) {
       pttActive = true;
       companion.startPushToTalk();
     }
-
-    // Schedule stop — if no repeat fires within 250ms, the key was released
     pttDebounceTimer = setTimeout(() => {
       pttActive = false;
       pttDebounceTimer = null;
       companion.stopPushToTalk();
     }, 250);
-  });
+  };
+
+  function registerPttShortcut(accelerator: string): boolean {
+    try {
+      if (currentShortcut) globalShortcut.unregister(currentShortcut);
+      const ok = globalShortcut.register(accelerator, pttHandler);
+      if (ok) {
+        currentShortcut = accelerator;
+        return true;
+      }
+      // Failed — try to put the previous one back.
+      if (currentShortcut && currentShortcut !== accelerator) {
+        globalShortcut.register(currentShortcut, pttHandler);
+      }
+      return false;
+    } catch (err) {
+      console.error('[Flicky] shortcut register failed:', err);
+      return false;
+    }
+  }
+
+  registerPttShortcut(companion.getSettings().pushToTalkShortcut);
+  companion.setShortcutReRegister(registerPttShortcut);
 
   // ── IPC Handlers ───────────────────────────────────────────────────
 
@@ -150,6 +168,7 @@ app.whenReady().then(() => {
   ipcMain.on(IPC.SET_SPEAK_REPLIES, (_e, enabled) => companion.setSpeakReplies(enabled));
   ipcMain.on(IPC.TOGGLE_CURSOR, (_e, enabled) => companion.toggleCursor(enabled));
   ipcMain.on(IPC.SET_LAUNCH_AT_LOGIN, (_e, enabled) => companion.setLaunchAtLogin(enabled));
+  ipcMain.on(IPC.SET_PUSH_TO_TALK_SHORTCUT, (_e, accel: string) => companion.setPushToTalkShortcut(accel));
   ipcMain.on(IPC.REQUEST_PERMISSION, (_e, kind) => companion.requestPermission(kind));
   ipcMain.on(IPC.OPEN_EXTERNAL, (_e, url) => shell.openExternal(url));
   ipcMain.on(IPC.QUIT_APP, () => app.quit());
