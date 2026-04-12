@@ -119,6 +119,7 @@ export function MindTab({ settings }: MindTabProps) {
             providerLogo="A"
             isSet={settings.apiKeyStatus.anthropic}
             keyPlaceholder="sk-ant-..."
+            hideProviderHeader
           />
         ) : (
           <ProviderKey
@@ -128,6 +129,7 @@ export function MindTab({ settings }: MindTabProps) {
             providerLogoClass="openai"
             isSet={settings.apiKeyStatus.openai}
             keyPlaceholder="sk-..."
+            hideProviderHeader
           />
         )}
         <p className="section-hint">Powers the reasoning behind every answer.</p>

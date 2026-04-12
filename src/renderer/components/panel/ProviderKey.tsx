@@ -8,6 +8,8 @@ interface ProviderKeyProps {
   providerLogoClass?: string;
   isSet: boolean;
   keyPlaceholder: string;
+  /** Hide the built-in provider pill (the caller is rendering its own switcher). */
+  hideProviderHeader?: boolean;
 }
 
 /**
@@ -21,6 +23,7 @@ export function ProviderKey({
   providerLogoClass,
   isSet,
   keyPlaceholder,
+  hideProviderHeader,
 }: ProviderKeyProps) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState('');
@@ -44,14 +47,16 @@ export function ProviderKey({
 
   return (
     <>
-      <div className="provider-header">
-        <div className="provider-pick">
-          <div className={`provider-logo ${providerLogoClass ?? ''}`}>{providerLogo}</div>
-          <span>{providerLabel}</span>
-          <span className="soon">more soon</span>
-          <span className="chev">▾</span>
+      {!hideProviderHeader && (
+        <div className="provider-header">
+          <div className="provider-pick">
+            <div className={`provider-logo ${providerLogoClass ?? ''}`}>{providerLogo}</div>
+            <span>{providerLabel}</span>
+            <span className="soon">more soon</span>
+            <span className="chev">▾</span>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="label">API key</div>
       {isSet && !editing ? (
