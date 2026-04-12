@@ -11,7 +11,7 @@
 .wf-bar {
   width: 3px;
   border-radius: 999px;
-  background: linear-gradient(180deg, #ff8a5b, #ffb04a);
+  background: linear-gradient(180deg, #ffffff, #8a8a92);
 }
 
 /* Pseudo-randomized resting heights per index */
@@ -40,12 +40,12 @@
 }
 
 .wf-responding .wf-bar {
-  background: linear-gradient(180deg, #7c3aed, #38bdf8);
+  background: linear-gradient(180deg, #e8e8ec, #8a8a92);
 }
 
 .wf-quiet .wf-bar {
-  opacity: 0.45;
-  background: linear-gradient(180deg, #d8c8b2, #e8dcc9);
+  opacity: 0.35;
+  background: linear-gradient(180deg, #5e5e66, #3a3a40);
   height: 22% !important;
 }
 

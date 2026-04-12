@@ -36,7 +36,7 @@ export function createPanelWindow(): BrowserWindow {
     fullscreenable: false,
     skipTaskbar: false,
     transparent: false,
-    backgroundColor: '#fffaf4',
+    backgroundColor: '#0f0f11',
     title: 'Flicky',
     webPreferences: {
       preload: getPreloadPath(),
