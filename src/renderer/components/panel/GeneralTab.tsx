@@ -26,6 +26,31 @@ function formatRelative(ts: number | null): string {
 
 export function GeneralTab({ settings, memory }: GeneralTabProps) {
   const [editingShortcut, setEditingShortcut] = useState(false);
+  const [isCompacting, setIsCompacting] = useState(false);
+  const [compactStatus, setCompactStatus] = useState<
+    { kind: 'success' | 'error'; message: string } | null
+  >(null);
+
+  const onCompact = async () => {
+    setIsCompacting(true);
+    setCompactStatus(null);
+    try {
+      const res = await window.flicky.compactContext();
+      if (res.ok) {
+        setCompactStatus({ kind: 'success', message: 'Compacted.' });
+      } else {
+        setCompactStatus({ kind: 'error', message: res.error ?? 'Compaction failed.' });
+      }
+    } catch (err) {
+      setCompactStatus({
+        kind: 'error',
+        message: err instanceof Error ? err.message : 'Compaction failed.',
+      });
+    } finally {
+      setIsCompacting(false);
+      setTimeout(() => setCompactStatus(null), 4000);
+    }
+  };
 
   const tokens = memory?.tokens ?? 0;
   const budget = memory?.tokenBudget ?? 250_000;
@@ -93,9 +118,26 @@ export function GeneralTab({ settings, memory }: GeneralTabProps) {
             <span>last compact {formatRelative(memory?.lastCompactedAt ?? null)}</span>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <button className="btn xs" onClick={() => window.flicky.compactContext()}>Compact now</button>
-          <button className="btn xs subtle" onClick={() => window.flicky.clearContext()}>Clear memory</button>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
+          <button className="btn xs" onClick={onCompact} disabled={isCompacting}>
+            {isCompacting && <span className="spinner-sm" />}
+            {isCompacting ? 'Compacting…' : 'Compact now'}
+          </button>
+          <button
+            className="btn xs subtle"
+            onClick={() => window.flicky.clearContext()}
+            disabled={isCompacting}
+          >
+            Clear memory
+          </button>
+          {compactStatus && (
+            <span
+              className={`compact-status ${compactStatus.kind}`}
+              title={compactStatus.message}
+            >
+              {compactStatus.message}
+            </span>
+          )}
         </div>
       </div>
 

@@ -53,7 +53,8 @@ const api = {
 
   // ── Memory / context ───────────────────────────────────────────────
   getMemoryStats: (): Promise<MemoryStats> => ipcRenderer.invoke(IPC.GET_MEMORY_STATS),
-  compactContext: (): void => ipcRenderer.send(IPC.COMPACT_CONTEXT),
+  compactContext: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.COMPACT_CONTEXT),
   clearContext: (): void => ipcRenderer.send(IPC.CLEAR_CONTEXT),
 
   // ── Chat history ────────────────────────────────────────────────────

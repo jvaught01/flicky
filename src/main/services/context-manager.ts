@@ -1,5 +1,6 @@
 import type { ConversationTurn, MemoryStats } from '../../shared/types';
 import { getApiKey } from './key-store';
+import * as settingsStore from './settings-store';
 
 /**
  * Token-based conversation memory.
@@ -17,6 +18,7 @@ import { getApiKey } from './key-store';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
+const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 
 export const MAX_TOKEN_BUDGET = 250_000;
 export const COMPACT_TRIGGER = 200_000;
@@ -115,7 +117,7 @@ export class ContextManager {
       '\n\nWrite a concise running summary of this conversation so far. Preserve names, decisions, preferences, tasks in progress, and unresolved questions. Drop chit-chat. Use 2–6 short paragraphs, no bullet points.';
 
     try {
-      const summary = await this.summarizeViaClaude(prompt);
+      const summary = await this.summarizeViaActiveProvider(prompt);
       this.summary = this.summary
         ? `${this.summary}\n\n${summary}`.trim()
         : summary;
@@ -125,9 +127,12 @@ export class ContextManager {
       this.lastCompactedAt = Date.now();
     } catch (err) {
       console.error('[Flicky] context compact failed:', err);
-      // Fallback: drop the oldest half of non-recent turns verbatim so we
-      // at least stay under budget, even without a summary. Still set
-      // lastCompactedAt so the UI reflects that we tried.
+      if (force) {
+        // Manual compaction: surface the error so the UI can show it.
+        throw err;
+      }
+      // Auto-compact fallback: drop the oldest half of non-recent turns
+      // verbatim so we at least stay under budget even without a summary.
       const dropCount = Math.ceil(olderTurns.length / 2);
       this.turns = [...olderTurns.slice(dropCount), ...recentTurns];
       this.summarizedCount += dropCount;
@@ -135,10 +140,30 @@ export class ContextManager {
     }
   }
 
-  private async summarizeViaClaude(prompt: string): Promise<string> {
-    const apiKey = getApiKey('anthropic');
-    if (!apiKey) throw new Error('Anthropic API key missing for compaction.');
+  /** Pick whichever provider has a key, preferring the active Mind provider. */
+  private async summarizeViaActiveProvider(prompt: string): Promise<string> {
+    const mindProvider = settingsStore.get('mindProvider');
+    const anthropicKey = getApiKey('anthropic');
+    const openaiKey = getApiKey('openai');
 
+    const preferOpenAI = mindProvider === 'openai';
+    const tryOrder: Array<'anthropic' | 'openai'> = preferOpenAI
+      ? ['openai', 'anthropic']
+      : ['anthropic', 'openai'];
+
+    for (const provider of tryOrder) {
+      if (provider === 'anthropic' && anthropicKey) {
+        return this.summarizeViaClaude(prompt, anthropicKey);
+      }
+      if (provider === 'openai' && openaiKey) {
+        return this.summarizeViaOpenAI(prompt, openaiKey);
+      }
+    }
+
+    throw new Error('No reasoning provider key configured — add Anthropic or OpenAI in the Mind tab.');
+  }
+
+  private async summarizeViaClaude(prompt: string, apiKey: string): Promise<string> {
     const response = await fetch(ANTHROPIC_API_URL, {
       method: 'POST',
       headers: {
@@ -152,13 +177,34 @@ export class ContextManager {
         messages: [{ role: 'user', content: prompt }],
       }),
     });
-
     if (!response.ok) {
-      throw new Error(`compact ${response.status}: ${await response.text()}`);
+      throw new Error(`compact (anthropic) ${response.status}: ${await response.text()}`);
     }
-
     const data = await response.json();
     const text = data?.content?.[0]?.text;
+    if (!text || typeof text !== 'string') throw new Error('no summary text');
+    return text;
+  }
+
+  private async summarizeViaOpenAI(prompt: string, apiKey: string): Promise<string> {
+    const model = settingsStore.get('selectedOpenAIModel');
+    const response = await fetch(OPENAI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        max_completion_tokens: 1024,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`compact (openai) ${response.status}: ${await response.text()}`);
+    }
+    const data = await response.json();
+    const text = data?.choices?.[0]?.message?.content;
     if (!text || typeof text !== 'string') throw new Error('no summary text');
     return text;
   }

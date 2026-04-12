@@ -180,9 +180,21 @@ export class CompanionManager {
     this.emitMemoryStats();
   }
 
-  async compactContext(): Promise<void> {
-    await this.context.compact(true);
-    this.emitMemoryStats();
+  async compactContext(): Promise<{ ok: boolean; error?: string }> {
+    if (!this.context.canCompact()) {
+      return { ok: false, error: 'Need at least two exchanges before compacting.' };
+    }
+    try {
+      await this.context.compact(true);
+      this.emitMemoryStats();
+      return { ok: true };
+    } catch (err) {
+      this.emitMemoryStats();
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   getMemoryStats(): MemoryStats {
