@@ -58,13 +58,10 @@ body {
   padding: 4px 6px 18px;
 }
 .sidebar-logo {
-  width: 34px; height: 34px; border-radius: 11px;
-  background: #fff;
+  width: 38px; height: 38px;
   display: grid; place-items: center;
-  color: #0f0f11;
-  font-family: 'Geist', system-ui, sans-serif;
-  font-weight: 800; font-size: 17px;
-  letter-spacing: -0.03em;
+  flex-shrink: 0;
+  filter: drop-shadow(0 3px 8px rgba(29, 78, 216, 0.45));
 }
 .sidebar-title {
   font-family: 'Geist', system-ui, sans-serif;

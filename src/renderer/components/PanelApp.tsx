@@ -6,6 +6,7 @@ import { MindTab } from './panel/MindTab';
 import { VoiceTab } from './panel/VoiceTab';
 import { EarTab } from './panel/EarTab';
 import { GeneralTab } from './panel/GeneralTab';
+import { CursorIcon } from './CursorIcon';
 
 type Tab = 'home' | 'chats' | 'mind' | 'voice' | 'ear' | 'general';
 
@@ -49,7 +50,9 @@ export function PanelApp() {
     <div className="panel-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <div className="sidebar-logo">F</div>
+          <div className="sidebar-logo">
+            <CursorIcon size={34} />
+          </div>
           <div className="sidebar-title">Flicky</div>
         </div>
 
