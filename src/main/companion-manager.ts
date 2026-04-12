@@ -1,5 +1,6 @@
 import { app, systemPreferences } from 'electron';
 import { ClaudeAPI } from './services/claude-api';
+import { OpenAIAPI } from './services/openai-api';
 import { ElevenLabsTTS } from './services/elevenlabs-tts';
 import { createTranscriptionProvider, type TranscriptionProvider } from './services/transcription';
 import { captureAllDisplays } from './services/screen-capture';
@@ -13,6 +14,8 @@ import type {
   VoiceState,
   FlickySettings,
   ClaudeModel,
+  OpenAIModel,
+  MindProvider,
   GroqTranscriptionModel,
   TranscriptionResult,
   DetectedElement,
@@ -42,6 +45,7 @@ export class CompanionManager {
   private callbacks: CompanionCallbacks;
 
   private claude: ClaudeAPI;
+  private openai: OpenAIAPI;
   private tts: ElevenLabsTTS;
   private context: ContextManager;
   private transcriptionProvider: TranscriptionProvider | null = null;
@@ -54,6 +58,7 @@ export class CompanionManager {
   constructor(callbacks: CompanionCallbacks) {
     this.callbacks = callbacks;
     this.claude = new ClaudeAPI();
+    this.openai = new OpenAIAPI();
     this.tts = new ElevenLabsTTS();
     this.context = new ContextManager();
 
@@ -73,6 +78,16 @@ export class CompanionManager {
 
   setModel(model: ClaudeModel): void {
     settingsStore.set('selectedModel', model);
+    this.emitSettings();
+  }
+
+  setOpenAIModel(model: OpenAIModel): void {
+    settingsStore.set('selectedOpenAIModel', model);
+    this.emitSettings();
+  }
+
+  setMindProvider(provider: MindProvider): void {
+    settingsStore.set('mindProvider', provider);
     this.emitSettings();
   }
 
@@ -309,65 +324,83 @@ export class CompanionManager {
     const settings = settingsStore.getAll();
     this.setVoiceState('responding');
 
-    await this.claude.streamChat(
-      result.text,
-      this.lastScreenshots,
-      this.context.getMessagesForSend(),
-      settings.selectedModel,
-      {
-        reasoningDepth: settings.reasoningDepth,
-        replyTone: settings.replyTone,
-      },
-      {
-        onChunk: (chunk) => this.callbacks.onAiResponseChunk(chunk),
-        onComplete: async (fullText, usage) => {
-          analytics.trackAiResponseReceived(fullText);
+    const mindCallbacks = {
+      onChunk: (chunk: string) => this.callbacks.onAiResponseChunk(chunk),
+      onComplete: async (
+        fullText: string,
+        usage?: { inputTokens: number; outputTokens: number },
+      ) => {
+        analytics.trackAiResponseReceived(fullText);
 
-          const cleanText = fullText.replace(/\[POINT:[^\]]+\]/g, '').trim();
-          this.callbacks.onAiResponseComplete(cleanText);
+        const cleanText = fullText.replace(/\[POINT:[^\]]+\]/g, '').trim();
+        this.callbacks.onAiResponseComplete(cleanText);
 
-          await this.context.recordExchange(result.text, cleanText, {
-            inputTokens: usage?.inputTokens,
-            outputTokens: usage?.outputTokens,
-          });
-          this.emitMemoryStats();
+        await this.context.recordExchange(result.text, cleanText, {
+          inputTokens: usage?.inputTokens,
+          outputTokens: usage?.outputTokens,
+        });
+        this.emitMemoryStats();
 
-          const entry = chatHistory.append({
-            userText: result.text,
-            assistantText: cleanText,
-          });
-          this.callbacks.onChatEntryAdded(entry);
+        const entry = chatHistory.append({
+          userText: result.text,
+          assistantText: cleanText,
+        });
+        this.callbacks.onChatEntryAdded(entry);
 
-          const element = parsePointTags(fullText, this.lastScreenshots);
-          if (element) {
-            this.callbacks.onElementDetected(element);
-            analytics.trackElementPointed(element.label);
+        const element = parsePointTags(fullText, this.lastScreenshots);
+        if (element) {
+          this.callbacks.onElementDetected(element);
+          analytics.trackElementPointed(element.label);
+        }
+
+        if (settings.speakReplies && keyStore.getKeyStatus().elevenlabs) {
+          try {
+            const audioBuffer = await this.tts.synthesize(cleanText, {
+              voiceId: settings.voiceId,
+              speed: settings.voiceSpeed,
+              stability: settings.voiceStability,
+            });
+            this.callbacks.onPlayAudio(audioBuffer);
+          } catch (err) {
+            console.error('TTS error:', err);
+            analytics.trackTtsError(String(err));
           }
+        }
 
-          if (settings.speakReplies && keyStore.getKeyStatus().elevenlabs) {
-            try {
-              const audioBuffer = await this.tts.synthesize(cleanText, {
-                voiceId: settings.voiceId,
-                speed: settings.voiceSpeed,
-                stability: settings.voiceStability,
-              });
-              this.callbacks.onPlayAudio(audioBuffer);
-            } catch (err) {
-              console.error('TTS error:', err);
-              analytics.trackTtsError(String(err));
-            }
-          }
-
-          this.setVoiceState('idle');
-          setTimeout(() => this.callbacks.onElementDetected(null), 6000);
-        },
-        onError: (err) => {
-          console.error('Claude API error:', err);
-          analytics.trackResponseError(err.message);
-          this.setVoiceState('idle');
-        },
+        this.setVoiceState('idle');
+        setTimeout(() => this.callbacks.onElementDetected(null), 6000);
       },
-    );
+      onError: (err: Error) => {
+        console.error('Mind provider error:', err);
+        analytics.trackResponseError(err.message);
+        this.setVoiceState('idle');
+      },
+    };
+
+    const mindOptions = {
+      reasoningDepth: settings.reasoningDepth,
+      replyTone: settings.replyTone,
+    };
+
+    if (settings.mindProvider === 'openai') {
+      await this.openai.streamChat(
+        result.text,
+        this.lastScreenshots,
+        this.context.getMessagesForSend(),
+        settings.selectedOpenAIModel,
+        mindOptions,
+        mindCallbacks,
+      );
+    } else {
+      await this.claude.streamChat(
+        result.text,
+        this.lastScreenshots,
+        this.context.getMessagesForSend(),
+        settings.selectedModel,
+        mindOptions,
+        mindCallbacks,
+      );
+    }
   }
 
   handleAudioChunk(buffer: Buffer): void {

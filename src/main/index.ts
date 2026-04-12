@@ -160,6 +160,8 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC.GET_PERMISSIONS, () => companion.getPermissions());
 
   ipcMain.on(IPC.SET_MODEL, (_e, model) => companion.setModel(model));
+  ipcMain.on(IPC.SET_OPENAI_MODEL, (_e, model) => companion.setOpenAIModel(model));
+  ipcMain.on(IPC.SET_MIND_PROVIDER, (_e, provider) => companion.setMindProvider(provider));
   ipcMain.on(IPC.SET_REASONING_DEPTH, (_e, depth) => companion.setReasoningDepth(depth));
   ipcMain.on(IPC.SET_REPLY_TONE, (_e, tone) => companion.setReplyTone(tone));
   ipcMain.on(IPC.SET_VOICE_ID, (_e, id) => companion.setVoiceId(id));

@@ -16,14 +16,24 @@ function formatTokens(n: number): string {
 }
 
 export function HomeTab({ voiceState, settings, memory, onNavigate }: HomeTabProps) {
-  const { apiKeyStatus } = settings;
-  const connectedCount = [apiKeyStatus.anthropic, apiKeyStatus.elevenlabs, apiKeyStatus.groq].filter(
+  const { apiKeyStatus, mindProvider } = settings;
+  const mindReady =
+    mindProvider === 'openai' ? apiKeyStatus.openai : apiKeyStatus.anthropic;
+  const connectedCount = [mindReady, apiKeyStatus.elevenlabs, apiKeyStatus.groq].filter(
     Boolean,
   ).length;
   const ready = connectedCount === 3;
 
   const modelLabel =
-    settings.selectedModel === 'claude-sonnet-4-6' ? 'Claude Sonnet 4.6' : 'Claude Opus 4.6';
+    mindProvider === 'openai'
+      ? settings.selectedOpenAIModel === 'gpt-5'
+        ? 'GPT-5'
+        : settings.selectedOpenAIModel === 'gpt-5-mini'
+          ? 'GPT-5 mini'
+          : 'GPT-4o'
+      : settings.selectedModel === 'claude-sonnet-4-6'
+        ? 'Claude Sonnet 4.6'
+        : 'Claude Opus 4.6';
 
   const pct = memory ? Math.round((memory.tokens / memory.tokenBudget) * 100) : 0;
 
@@ -105,11 +115,14 @@ export function HomeTab({ voiceState, settings, memory, onNavigate }: HomeTabPro
       <div className="provider-summary">
         <h3>Connected providers</h3>
         <div className="provider-row">
-          <div className="provider-logo">A</div>
-          <div className="nm">
-            Anthropic <span className="purpose" style={{ marginLeft: 6 }}>· reasoning</span>
+          <div className={`provider-logo ${mindProvider === 'openai' ? 'openai' : ''}`}>
+            {mindProvider === 'openai' ? 'Ai' : 'A'}
           </div>
-          {apiKeyStatus.anthropic ? (
+          <div className="nm">
+            {mindProvider === 'openai' ? 'OpenAI' : 'Anthropic'}{' '}
+            <span className="purpose" style={{ marginLeft: 6 }}>· reasoning</span>
+          </div>
+          {mindReady ? (
             <span className="pill-saved">Connected</span>
           ) : (
             <button className="goto" onClick={() => onNavigate('mind')}>Add key →</button>

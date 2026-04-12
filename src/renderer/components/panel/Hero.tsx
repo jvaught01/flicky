@@ -7,8 +7,10 @@ interface HeroProps {
 }
 
 export function Hero({ voiceState, settings }: HeroProps) {
-  const { apiKeyStatus } = settings;
-  const connectedCount = [apiKeyStatus.anthropic, apiKeyStatus.elevenlabs, apiKeyStatus.groq].filter(
+  const { apiKeyStatus, mindProvider } = settings;
+  const mindReady =
+    mindProvider === 'openai' ? apiKeyStatus.openai : apiKeyStatus.anthropic;
+  const connectedCount = [mindReady, apiKeyStatus.elevenlabs, apiKeyStatus.groq].filter(
     Boolean,
   ).length;
   const ready = connectedCount === 3;

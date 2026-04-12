@@ -16,7 +16,7 @@ import { app } from 'electron';
  * ciphertext that can only be decrypted by the current OS user.
  */
 
-const KEY_NAMES = ['anthropic', 'elevenlabs', 'groq'] as const;
+const KEY_NAMES = ['anthropic', 'openai', 'elevenlabs', 'groq'] as const;
 export type ApiKeyName = (typeof KEY_NAMES)[number];
 
 interface KeyFile {
@@ -85,6 +85,7 @@ export function deleteApiKey(name: ApiKeyName): void {
 export function getKeyStatus(): Record<ApiKeyName, boolean> {
   return {
     anthropic: hasApiKey('anthropic'),
+    openai: hasApiKey('openai'),
     elevenlabs: hasApiKey('elevenlabs'),
     groq: hasApiKey('groq'),
   };

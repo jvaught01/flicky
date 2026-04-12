@@ -3,6 +3,8 @@ import { IPC } from '../shared/types';
 import type {
   ApiKeyName,
   ClaudeModel,
+  OpenAIModel,
+  MindProvider,
   GroqTranscriptionModel,
   FlickySettings,
   VoiceState,
@@ -19,6 +21,8 @@ const api = {
   getSettings: (): Promise<FlickySettings> => ipcRenderer.invoke(IPC.GET_SETTINGS),
 
   setModel: (model: ClaudeModel): void => ipcRenderer.send(IPC.SET_MODEL, model),
+  setOpenAIModel: (model: OpenAIModel): void => ipcRenderer.send(IPC.SET_OPENAI_MODEL, model),
+  setMindProvider: (provider: MindProvider): void => ipcRenderer.send(IPC.SET_MIND_PROVIDER, provider),
   setReasoningDepth: (depth: ReasoningDepth): void => ipcRenderer.send(IPC.SET_REASONING_DEPTH, depth),
   setReplyTone: (tone: ReplyTone): void => ipcRenderer.send(IPC.SET_REPLY_TONE, tone),
 

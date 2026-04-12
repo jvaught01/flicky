@@ -3,6 +3,8 @@ import * as path from 'path';
 import { app } from 'electron';
 import type {
   ClaudeModel,
+  OpenAIModel,
+  MindProvider,
   GroqTranscriptionModel,
   TranscriptionProviderType,
   ReasoningDepth,
@@ -15,7 +17,9 @@ import type {
  */
 
 export interface StoredSettings {
+  mindProvider: MindProvider;
   selectedModel: ClaudeModel;
+  selectedOpenAIModel: OpenAIModel;
   reasoningDepth: ReasoningDepth;
   replyTone: ReplyTone;
 
@@ -35,7 +39,9 @@ export interface StoredSettings {
 }
 
 const DEFAULTS: StoredSettings = {
+  mindProvider: 'anthropic',
   selectedModel: 'claude-sonnet-4-6',
+  selectedOpenAIModel: 'gpt-5',
   reasoningDepth: 'off',
   replyTone: 'friendly',
 

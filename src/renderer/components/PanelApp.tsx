@@ -61,7 +61,12 @@ export function PanelApp() {
           {navItem('chats', 'Chats')}
 
           <div className="nav-label">Providers</div>
-          {navItem('mind', 'Mind', { needs: !apiKeyStatus.anthropic })}
+          {navItem('mind', 'Mind', {
+            needs:
+              settings.mindProvider === 'openai'
+                ? !apiKeyStatus.openai
+                : !apiKeyStatus.anthropic,
+          })}
           {navItem('voice', 'Voice', { needs: !apiKeyStatus.elevenlabs })}
           {navItem('ear', 'Ear', { needs: !apiKeyStatus.groq })}
 

@@ -280,7 +280,19 @@ body {
   flex-shrink: 0;
 }
 .provider-logo.eleven { background: #2a2a30; color: #fff; }
-.provider-logo.groq { background: #444449; color: #fff; }
+.provider-logo.groq { background: #f55036; color: #fff; }
+.provider-logo.openai { background: #10a37f; color: #fff; font-size: 9px; }
+
+/* Make .provider-pick clickable (it's a <button> now) */
+button.provider-pick {
+  font: inherit; width: 100%;
+  text-align: left; cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+button.provider-pick:hover {
+  border-color: var(--fl-border-strong);
+  background: var(--fl-surface);
+}
 
 .label {
   font-size: 12px; font-weight: 600; color: var(--fl-muted);

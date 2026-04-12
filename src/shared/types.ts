@@ -36,6 +36,11 @@ export interface ScreenCapture {
 
 export type ClaudeModel = 'claude-sonnet-4-6' | 'claude-opus-4-6';
 
+export type OpenAIModel = 'gpt-5' | 'gpt-5-mini' | 'gpt-4o';
+
+/** Which service backs the Mind (reasoning) capability. */
+export type MindProvider = 'anthropic' | 'openai';
+
 /** Extended-thinking budget mapping. */
 export type ReasoningDepth = 'off' | 'medium' | 'deep';
 
@@ -58,10 +63,11 @@ export interface DetectedElement {
 
 // ── API Keys ───────────────────────────────────────────────────────────
 
-export type ApiKeyName = 'anthropic' | 'elevenlabs' | 'groq';
+export type ApiKeyName = 'anthropic' | 'openai' | 'elevenlabs' | 'groq';
 
 export interface ApiKeyStatus {
   anthropic: boolean;
+  openai: boolean;
   elevenlabs: boolean;
   groq: boolean;
 }
@@ -76,6 +82,7 @@ export interface VoicePreset {
 }
 
 export const VOICE_PRESETS: VoicePreset[] = [
+  { id: 'Fahco4VZzobUeiPqni1S', name: 'Tom', description: 'custom · en-US' },
   { id: 'pMsXgVXv3BLzUgSXRplE', name: 'Serena', description: 'warm · conversational · en-US' },
   { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', description: 'calm · narrator · en-US' },
   { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi', description: 'strong · confident · en-US' },
@@ -114,7 +121,9 @@ export interface MemoryStats {
 
 export interface FlickySettings {
   // Mind
+  mindProvider: MindProvider;
   selectedModel: ClaudeModel;
+  selectedOpenAIModel: OpenAIModel;
   reasoningDepth: ReasoningDepth;
   replyTone: ReplyTone;
 
@@ -139,7 +148,9 @@ export interface FlickySettings {
 }
 
 export const DEFAULT_SETTINGS: FlickySettings = {
+  mindProvider: 'anthropic',
   selectedModel: 'claude-sonnet-4-6',
+  selectedOpenAIModel: 'gpt-5',
   reasoningDepth: 'off',
   replyTone: 'friendly',
 
@@ -156,7 +167,7 @@ export const DEFAULT_SETTINGS: FlickySettings = {
   pushToTalkShortcut: 'Ctrl+Alt+X',
 
   onboardingComplete: false,
-  apiKeyStatus: { anthropic: false, elevenlabs: false, groq: false },
+  apiKeyStatus: { anthropic: false, openai: false, elevenlabs: false, groq: false },
 };
 
 // ── IPC Channels ───────────────────────────────────────────────────────
@@ -178,6 +189,8 @@ export const IPC = {
   PUSH_TO_TALK_START: 'push-to-talk-start',
   PUSH_TO_TALK_STOP: 'push-to-talk-stop',
   SET_MODEL: 'set-model',
+  SET_OPENAI_MODEL: 'set-openai-model',
+  SET_MIND_PROVIDER: 'set-mind-provider',
   SET_REASONING_DEPTH: 'set-reasoning-depth',
   SET_REPLY_TONE: 'set-reply-tone',
   SET_VOICE_ID: 'set-voice-id',
