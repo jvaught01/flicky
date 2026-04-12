@@ -154,6 +154,18 @@ app.whenReady().then(() => {
   registerPttShortcut(companion.getSettings().pushToTalkShortcut);
   companion.setShortcutReRegister(registerPttShortcut);
 
+  function suspendPttShortcut(): void {
+    if (currentShortcut) {
+      try { globalShortcut.unregister(currentShortcut); } catch { /* no-op */ }
+    }
+  }
+  function resumePttShortcut(): void {
+    const desired = companion.getSettings().pushToTalkShortcut;
+    registerPttShortcut(desired);
+  }
+  ipcMain.on(IPC.SUSPEND_PUSH_TO_TALK_SHORTCUT, () => suspendPttShortcut());
+  ipcMain.on(IPC.RESUME_PUSH_TO_TALK_SHORTCUT, () => resumePttShortcut());
+
   // ── IPC Handlers ───────────────────────────────────────────────────
 
   ipcMain.handle(IPC.GET_SETTINGS, () => companion.getSettings());

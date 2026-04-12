@@ -201,6 +201,8 @@ export const IPC = {
   TOGGLE_CURSOR: 'toggle-cursor',
   SET_LAUNCH_AT_LOGIN: 'set-launch-at-login',
   SET_PUSH_TO_TALK_SHORTCUT: 'set-push-to-talk-shortcut',
+  SUSPEND_PUSH_TO_TALK_SHORTCUT: 'suspend-push-to-talk-shortcut',
+  RESUME_PUSH_TO_TALK_SHORTCUT: 'resume-push-to-talk-shortcut',
   GET_SETTINGS: 'get-settings',
   GET_PERMISSIONS: 'get-permissions',
   REQUEST_PERMISSION: 'request-permission',

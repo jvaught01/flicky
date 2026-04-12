@@ -626,6 +626,30 @@ button.provider-pick:hover {
   color: #fff;
   font-weight: 600;
 }
+.shortcut-edit.capture .capture-save,
+.shortcut-edit.capture .capture-cancel {
+  font: inherit; font-size: 11px; font-weight: 600;
+  padding: 4px 10px; border-radius: 999px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.shortcut-edit.capture .capture-save {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+}
+.shortcut-edit.capture .capture-save:disabled {
+  opacity: 0.35; cursor: default;
+}
+.shortcut-edit.capture .capture-cancel {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.shortcut-edit.capture .capture-cancel:hover {
+  color: #fff;
+  border-color: #fff;
+}
 @keyframes captureGlow {
   50% { box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.14); }
 }

@@ -7,7 +7,6 @@ interface ShortcutCaptureProps {
 
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta', 'OS', 'ContextMenu']);
 
-/** Normalize a KeyboardEvent.key value into Electron's accelerator key syntax. */
 function normalizeKey(key: string): string | null {
   if (MODIFIER_KEYS.has(key)) return null;
   if (key === ' ') return 'Space';
@@ -21,16 +20,28 @@ function normalizeKey(key: string): string | null {
   if (key === 'Backspace') return 'Backspace';
   if (key === 'Delete') return 'Delete';
   if (key.length === 1) return key.toUpperCase();
-  // F1..F24, Home, End, etc come through as-is in Pascal case.
   return key;
 }
 
 /**
- * Full-screen-ish key-capture panel. Pressing a combo commits it.
- * Esc cancels. Requires at least one modifier + one real key.
+ * Listens for a key combo. The existing global shortcut is suspended
+ * while this is mounted so that the currently-registered accelerator
+ * doesn't swallow the keys we want to capture.
+ *
+ * A combo preview builds as the user holds modifiers and presses a
+ * non-modifier key. Save commits; Cancel reverts.
  */
 export function ShortcutCapture({ onSave, onCancel }: ShortcutCaptureProps) {
   const [preview, setPreview] = useState<string[]>([]);
+  const [hasValid, setHasValid] = useState(false);
+
+  // Suspend the global shortcut while capturing so keys reach the renderer.
+  useEffect(() => {
+    window.flicky.suspendPushToTalkShortcut();
+    return () => {
+      window.flicky.resumePushToTalkShortcut();
+    };
+  }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -51,19 +62,25 @@ export function ShortcutCapture({ onSave, onCancel }: ShortcutCaptureProps) {
       const mainKey = normalizeKey(e.key);
       if (!mainKey) {
         setPreview(parts);
+        setHasValid(false);
         return;
       }
 
       parts.push(mainKey);
-      setPreview(parts);
-
       const hasModifier = e.ctrlKey || e.altKey || e.shiftKey || e.metaKey;
-      if (hasModifier) onSave(parts.join('+'));
+      setPreview(parts);
+      setHasValid(hasModifier);
     };
 
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [onSave, onCancel]);
+  }, [onCancel]);
+
+  const accelerator = preview.join('+');
+
+  const handleSave = () => {
+    if (hasValid && accelerator) onSave(accelerator);
+  };
 
   return (
     <div className="shortcut-edit capture">
@@ -74,7 +91,17 @@ export function ShortcutCapture({ onSave, onCancel }: ShortcutCaptureProps) {
           <span className="dim">press keys…</span>
         )}
       </div>
-      <span className="rec" onClick={onCancel}>cancel</span>
+      <button
+        className="capture-save"
+        onClick={handleSave}
+        disabled={!hasValid}
+        title={hasValid ? `Save ${accelerator}` : 'Press a modifier + key'}
+      >
+        Save
+      </button>
+      <button className="capture-cancel" onClick={onCancel}>
+        Cancel
+      </button>
     </div>
   );
 }
