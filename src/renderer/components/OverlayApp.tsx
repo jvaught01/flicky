@@ -260,10 +260,6 @@ export function OverlayApp() {
           >
             <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
               <defs>
-                <linearGradient id="fl-back" x1="20%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#93c5fd" />
-                  <stop offset="100%" stopColor="#1d4ed8" />
-                </linearGradient>
                 <linearGradient id="fl-front" x1="10%" y1="0%" x2="100%" y2="100%">
                   <stop offset="0%" stopColor="#e0f2fe" />
                   <stop offset="50%" stopColor="#7dd3fc" />
@@ -271,17 +267,7 @@ export function OverlayApp() {
                 </linearGradient>
               </defs>
 
-              {/* Back layer — offset down/right, darker */}
-              <polygon
-                points="10,14 40,24 20,42"
-                fill="url(#fl-back)"
-                stroke="url(#fl-back)"
-                strokeWidth="3"
-                strokeLinejoin="round"
-                opacity="0.9"
-              />
-
-              {/* Front layer — brighter, glossy */}
+              {/* Single glossy triangle — tip at upper-left, body trails down-right */}
               <polygon
                 points="4,4 34,14 14,32"
                 fill="url(#fl-front)"
@@ -290,7 +276,7 @@ export function OverlayApp() {
                 strokeLinejoin="round"
               />
 
-              {/* Upper-left edge gloss highlight */}
+              {/* Upper edge gloss highlight */}
               <polyline
                 points="4,4 34,14"
                 fill="none"

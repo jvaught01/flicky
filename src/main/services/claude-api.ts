@@ -14,6 +14,9 @@ const BASE_PROMPT = `you are flicky, a friendly screen-aware ai companion that l
 
 you can see the user's screen — reference specific things you see. if the user asks about something on screen, describe what you notice.
 
+TOOLS:
+you have access to web_search. use it when the user asks about something that needs fresh or current info (news, prices, docs, today's weather, recent releases, etc.). don't use it for things you already know confidently or for simple on-screen questions. when you do search, quietly incorporate the findings into your spoken answer — don't read out URLs.
+
 POINTING AT ELEMENTS:
 when you want to show the user something on screen, use the tag: [POINT:x,y:label:screenN]
 - x,y are pixel coordinates within the screenshot image (origin is top-left corner, x goes right, y goes down)
@@ -104,6 +107,16 @@ export class ClaudeAPI {
       system: systemPrompt,
       messages,
       stream: true,
+      // Let Flicky reach the web when it needs fresh info. Server-side
+      // tool — Claude decides when to search and we just stream the
+      // final answer.
+      tools: [
+        {
+          type: 'web_search_20250305',
+          name: 'web_search',
+          max_uses: 3,
+        },
+      ],
     };
 
     if (thinkingBudget > 0) {
@@ -120,6 +133,7 @@ export class ClaudeAPI {
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': ANTHROPIC_VERSION,
+          'anthropic-beta': 'web-search-2025-03-05',
         },
         body: JSON.stringify(requestBody),
       });

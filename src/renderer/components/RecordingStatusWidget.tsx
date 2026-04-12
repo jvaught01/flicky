@@ -50,9 +50,10 @@ export function RecordingStatusWidget({
             active={isListening}
             processing={isProcessing}
             strokeColor="#ffffff"
-            width={120}
-            height={36}
-            baselineOffset={3}
+            strokeWidth={1.2}
+            width={80}
+            height={20}
+            baselineOffset={2}
           />
         </div>
 

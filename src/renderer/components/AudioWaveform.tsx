@@ -6,15 +6,15 @@ import { useEffect, useRef } from 'react';
  */
 
 const TAU = Math.PI * 2;
-const LEVEL_SMOOTHING = 0.18;
-const TARGET_DECAY_PER_FRAME = 0.985;
-const WAVE_BASE_PHASE_STEP = 0.11;
-const WAVE_PHASE_GAIN = 0.32;
+const LEVEL_SMOOTHING = 0.12;
+const TARGET_DECAY_PER_FRAME = 0.99;
+const WAVE_BASE_PHASE_STEP = 0.05;
+const WAVE_PHASE_GAIN = 0.14;
 const MIN_AMPLITUDE = 0.03;
 const MAX_AMPLITUDE = 1.3;
-const PROCESSING_BASE_LEVEL = 0.16;
-const DEFAULT_WIDTH = 120;
-const DEFAULT_HEIGHT = 36;
+const PROCESSING_BASE_LEVEL = 0.12;
+const DEFAULT_WIDTH = 80;
+const DEFAULT_HEIGHT = 20;
 
 interface WaveConfig {
   frequency: number;
