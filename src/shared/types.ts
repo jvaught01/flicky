@@ -11,7 +11,10 @@ export type BuddyNavigationMode =
 
 export type TranscriptionProviderType = 'groq' | 'openai' | 'native';
 
-export type GroqTranscriptionModel = 'whisper-large-v3' | 'whisper-large-v3-turbo' | 'distil-whisper-large-v3-en';
+export type GroqTranscriptionModel =
+  | 'whisper-large-v3'
+  | 'whisper-large-v3-turbo'
+  | 'distil-whisper-large-v3-en';
 
 export interface TranscriptionResult {
   text: string;
@@ -21,22 +24,23 @@ export interface TranscriptionResult {
 // ── Screen Capture ─────────────────────────────────────────────────────
 
 export interface ScreenCapture {
-  /** Base-64 encoded JPEG */
   dataBase64: string;
-  /** Which display this came from */
   displayId: number;
-  /** Pixel dimensions of the captured image */
   imageWidth: number;
   imageHeight: number;
-  /** Display bounds in OS coordinates */
   displayBounds: { x: number; y: number; width: number; height: number };
-  /** Whether the mouse cursor is on this display */
   isCursorScreen: boolean;
 }
 
 // ── Claude API ─────────────────────────────────────────────────────────
 
 export type ClaudeModel = 'claude-sonnet-4-6' | 'claude-opus-4-6';
+
+/** Extended-thinking budget mapping. */
+export type ReasoningDepth = 'off' | 'medium' | 'deep';
+
+/** System-prompt variant. */
+export type ReplyTone = 'concise' | 'friendly' | 'detailed';
 
 export interface ConversationTurn {
   role: 'user' | 'assistant';
@@ -62,22 +66,84 @@ export interface ApiKeyStatus {
   groq: boolean;
 }
 
+// ── Voice / TTS ────────────────────────────────────────────────────────
+
+/** Built-in voice presets we curate for the voice picker. */
+export interface VoicePreset {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export const VOICE_PRESETS: VoicePreset[] = [
+  { id: 'pMsXgVXv3BLzUgSXRplE', name: 'Serena', description: 'warm · conversational · en-US' },
+  { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', description: 'calm · narrator · en-US' },
+  { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi', description: 'strong · confident · en-US' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella', description: 'soft · friendly · en-US' },
+  { id: 'ErXwobaYiN019PkySvjV', name: 'Antoni', description: 'well-rounded · en-US' },
+  { id: 'VR6AewLTigWG4xSOukaG', name: 'Arnold', description: 'crisp · narration · en-US' },
+];
+
+// ── Memory / Context ───────────────────────────────────────────────────
+
+export interface MemoryStats {
+  /** Approximate total tokens currently held in context. */
+  tokens: number;
+  /** Soft cap that triggers auto-compaction. */
+  tokenBudget: number;
+  /** Full messages held verbatim. */
+  messageCount: number;
+  /** Messages that have been summarized into the rolling summary. */
+  summarizedCount: number;
+  /** Whether a rolling summary is currently prepended to context. */
+  hasSummary: boolean;
+  /** Unix ms of last auto/manual compaction, or null. */
+  lastCompactedAt: number | null;
+}
+
 // ── Settings ───────────────────────────────────────────────────────────
 
 export interface FlickySettings {
+  // Mind
   selectedModel: ClaudeModel;
+  reasoningDepth: ReasoningDepth;
+  replyTone: ReplyTone;
+
+  // Voice (TTS)
+  voiceId: string;
+  voiceSpeed: number;    // 0.7 – 1.2 (ElevenLabs accepted range)
+  voiceStability: number; // 0 – 1
+  speakReplies: boolean;
+
+  // Ear (transcription)
   groqTranscriptionModel: GroqTranscriptionModel;
-  isClickyCursorEnabled: boolean;
   transcriptionProvider: TranscriptionProviderType;
+
+  // General
+  isClickyCursorEnabled: boolean;
+  launchAtLogin: boolean;
+
+  // Lifecycle
   onboardingComplete: boolean;
   apiKeyStatus: ApiKeyStatus;
 }
 
 export const DEFAULT_SETTINGS: FlickySettings = {
   selectedModel: 'claude-sonnet-4-6',
+  reasoningDepth: 'off',
+  replyTone: 'friendly',
+
+  voiceId: 'pMsXgVXv3BLzUgSXRplE',
+  voiceSpeed: 1.0,
+  voiceStability: 0.5,
+  speakReplies: true,
+
   groqTranscriptionModel: 'whisper-large-v3-turbo',
-  isClickyCursorEnabled: true,
   transcriptionProvider: 'groq',
+
+  isClickyCursorEnabled: true,
+  launchAtLogin: false,
+
   onboardingComplete: false,
   apiKeyStatus: { anthropic: false, elevenlabs: false, groq: false },
 };
@@ -94,12 +160,21 @@ export const IPC = {
   CURSOR_POSITION: 'cursor-position',
   SETTINGS_CHANGED: 'settings-changed',
   PERMISSION_STATUS: 'permission-status',
+  MEMORY_STATS: 'memory-stats',
 
   // Renderer → Main
   PUSH_TO_TALK_START: 'push-to-talk-start',
   PUSH_TO_TALK_STOP: 'push-to-talk-stop',
   SET_MODEL: 'set-model',
+  SET_REASONING_DEPTH: 'set-reasoning-depth',
+  SET_REPLY_TONE: 'set-reply-tone',
+  SET_VOICE_ID: 'set-voice-id',
+  SET_VOICE_SPEED: 'set-voice-speed',
+  SET_VOICE_STABILITY: 'set-voice-stability',
+  SET_SPEAK_REPLIES: 'set-speak-replies',
+  SET_GROQ_MODEL: 'set-groq-model',
   TOGGLE_CURSOR: 'toggle-cursor',
+  SET_LAUNCH_AT_LOGIN: 'set-launch-at-login',
   GET_SETTINGS: 'get-settings',
   GET_PERMISSIONS: 'get-permissions',
   REQUEST_PERMISSION: 'request-permission',
@@ -107,10 +182,12 @@ export const IPC = {
   QUIT_APP: 'quit-app',
   REPLAY_ONBOARDING: 'replay-onboarding',
   COMPLETE_ONBOARDING: 'complete-onboarding',
-  SET_GROQ_MODEL: 'set-groq-model',
   CLEAR_CONTEXT: 'clear-context',
+  COMPACT_CONTEXT: 'compact-context',
+  GET_MEMORY_STATS: 'get-memory-stats',
+  PLAY_VOICE_PREVIEW: 'play-voice-preview',
 
-  // API Key Management (Renderer → Main)
+  // API Key Management
   SET_API_KEY: 'set-api-key',
   DELETE_API_KEY: 'delete-api-key',
   GET_API_KEY_STATUS: 'get-api-key-status',

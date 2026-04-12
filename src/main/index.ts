@@ -80,6 +80,7 @@ app.whenReady().then(() => {
     onAiResponseComplete: (text) => sendToAll(IPC.AI_RESPONSE_COMPLETE, text),
     onElementDetected: (el) => sendToOverlays(IPC.ELEMENT_DETECTED, el),
     onSettingsChanged: (s) => sendToPanel(IPC.SETTINGS_CHANGED, s),
+    onMemoryStatsChanged: (stats) => sendToPanel(IPC.MEMORY_STATS, stats),
     onStartAudioCapture: () => sendToOverlays(AUDIO_IPC.START_CAPTURE),
     onStopAudioCapture: () => sendToOverlays(AUDIO_IPC.STOP_CAPTURE),
     onPlayAudio: (buf) => sendToOverlays('play-audio', buf),
@@ -149,7 +150,14 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC.GET_PERMISSIONS, () => companion.getPermissions());
 
   ipcMain.on(IPC.SET_MODEL, (_e, model) => companion.setModel(model));
+  ipcMain.on(IPC.SET_REASONING_DEPTH, (_e, depth) => companion.setReasoningDepth(depth));
+  ipcMain.on(IPC.SET_REPLY_TONE, (_e, tone) => companion.setReplyTone(tone));
+  ipcMain.on(IPC.SET_VOICE_ID, (_e, id) => companion.setVoiceId(id));
+  ipcMain.on(IPC.SET_VOICE_SPEED, (_e, speed) => companion.setVoiceSpeed(speed));
+  ipcMain.on(IPC.SET_VOICE_STABILITY, (_e, stab) => companion.setVoiceStability(stab));
+  ipcMain.on(IPC.SET_SPEAK_REPLIES, (_e, enabled) => companion.setSpeakReplies(enabled));
   ipcMain.on(IPC.TOGGLE_CURSOR, (_e, enabled) => companion.toggleCursor(enabled));
+  ipcMain.on(IPC.SET_LAUNCH_AT_LOGIN, (_e, enabled) => companion.setLaunchAtLogin(enabled));
   ipcMain.on(IPC.REQUEST_PERMISSION, (_e, kind) => companion.requestPermission(kind));
   ipcMain.on(IPC.OPEN_EXTERNAL, (_e, url) => shell.openExternal(url));
   ipcMain.on(IPC.QUIT_APP, () => app.quit());
@@ -157,6 +165,9 @@ app.whenReady().then(() => {
   ipcMain.on(IPC.COMPLETE_ONBOARDING, () => companion.completeOnboarding());
   ipcMain.on(IPC.SET_GROQ_MODEL, (_e, model) => companion.setGroqModel(model));
   ipcMain.on(IPC.CLEAR_CONTEXT, () => companion.clearContext());
+  ipcMain.on(IPC.COMPACT_CONTEXT, () => { void companion.compactContext(); });
+  ipcMain.on(IPC.PLAY_VOICE_PREVIEW, (_e, voiceId) => { void companion.playVoicePreview(voiceId); });
+  ipcMain.handle(IPC.GET_MEMORY_STATS, () => companion.getMemoryStats());
 
   // API Key Management
   ipcMain.on(IPC.SET_API_KEY, (_e, name, value) => companion.setApiKey(name, value));

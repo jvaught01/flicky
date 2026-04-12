@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { VoiceState, DetectedElement } from '../../shared/types';
+import { Waveform as SharedWaveform } from './Waveform';
 
 const POINTING_PHRASES = [
   'right here!',
@@ -314,7 +315,12 @@ export function OverlayApp() {
 
           {/* Waveform during listening */}
           {voiceState === 'listening' && (
-            <Waveform x={companionPos.x + 30} y={companionPos.y - 4} />
+            <div
+              className="overlay-waveform"
+              style={{ left: companionPos.x + 30, top: companionPos.y - 4 }}
+            >
+              <SharedWaveform state="listening" bars={12} height={26} />
+            </div>
           )}
 
           {/* Spinner during processing */}
@@ -353,23 +359,3 @@ export function OverlayApp() {
   );
 }
 
-function Waveform({ x, y }: { x: number; y: number }) {
-  const [bars, setBars] = useState<number[]>(Array(12).fill(3));
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setBars((prev) =>
-        prev.map(() => 3 + Math.random() * 18),
-      );
-    }, 70);
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div className="waveform" style={{ left: x, top: y }}>
-      {bars.map((height, i) => (
-        <div key={i} className="waveform-bar" style={{ height }} />
-      ))}
-    </div>
-  );
-}

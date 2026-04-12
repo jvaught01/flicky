@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Flicky — Tabbed Panel v4</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root { color-scheme: dark; }
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    background:
+      radial-gradient(1200px 800px at 20% 10%, #1a1820 0%, transparent 60%),
+      radial-gradient(900px 700px at 85% 90%, #181a22 0%, transparent 55%),
+      #0b0c0f;
+    color: #e9e9ee;
+    min-height: 100vh;
+    padding: 48px 32px 96px;
+  }
+  .page-head { max-width: 1600px; margin: 0 auto 48px; }
+  .page-head h1 {
+    font-family: "Instrument Serif", serif;
+    font-weight: 400; font-size: 44px; letter-spacing: -0.02em;
+    margin: 0 0 8px;
+  }
+  .page-head p { color: #8a8a97; margin: 0; font-size: 14px; max-width: 680px; line-height: 1.6; }
+  .page-head .notes { margin-top: 18px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .page-head .notes span {
+    font-size: 11.5px; color: #a0a0b0; padding: 4px 10px;
+    background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07); border-radius: 999px;
+  }
+
+  .lineup {
+    max-width: 1600px; margin: 0 auto;
+    display: grid; gap: 48px 28px;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    align-items: start;
+  }
+  .card-slot { display: flex; flex-direction: column; gap: 14px; align-items: center; }
+  .slot-head { width: 360px; display: flex; align-items: baseline; gap: 10px; }
+  .slot-num { font-family: "Instrument Serif", serif; font-size: 26px; color: #4a4a55; line-height: 1; }
+  .slot-name { font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
+  .slot-tag { margin-left: auto; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: #6a6a78; padding: 2px 8px; border: 1px solid #2a2a33; border-radius: 999px; }
+
+  /* ════════════════════════════════════════════════════════════════════
+     FLICKY TABBED PANEL — Soft Pill palette
+  ════════════════════════════════════════════════════════════════════ */
+  .panel {
+    width: 360px;
+    background: #fffaf4;
+    color: #2b1f17;
+    border: 1px solid #f0e5d8;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 40px 90px -30px rgba(0,0,0,.8), 0 10px 30px -15px rgba(0,0,0,.5);
+    letter-spacing: -0.005em;
+  }
+
+  /* ── Hero ────────────────────────────────────────────────────────── */
+  .hero {
+    position: relative;
+    padding: 18px 20px 14px;
+    background:
+      radial-gradient(320px 160px at 50% 70%, rgba(255,138,91,.22), transparent 70%),
+      radial-gradient(220px 140px at 15% 30%, rgba(255,176,74,.18), transparent 70%),
+      linear-gradient(180deg, #fff4e8 0%, #fffaf4 100%);
+    border-bottom: 1px solid #f0e5d8;
+    overflow: hidden;
+  }
+  .hero-top { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 32px; height: 32px; border-radius: 11px;
+    background: linear-gradient(135deg, #ff8a5b, #ffb04a);
+    display: grid; place-items: center;
+    color: #fff;
+    font-family: "Instrument Serif", serif;
+    font-style: italic;
+    font-weight: 500;
+    font-size: 20px;
+    box-shadow: 0 6px 14px -4px rgba(255,138,91,.55);
+    flex-shrink: 0;
+  }
+  .brand-name {
+    font-family: "Instrument Serif", serif;
+    font-weight: 400;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    line-height: 1;
+  }
+  .brand-sub { font-size: 11.5px; color: #a0917f; margin-top: 3px; letter-spacing: 0; }
+  .state {
+    margin-left: auto; display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: #3d7a5a;
+    background: #e3f1e6; padding: 4px 10px; border-radius: 999px;
+    font-weight: 600; letter-spacing: -0.005em;
+  }
+  .state::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: #3d7a5a; box-shadow: 0 0 6px #3d7a5a; }
+  .state.listening { color: #c85b2a; background: #fff1e4; }
+  .state.listening::before { background: #ff8a5b; box-shadow: 0 0 6px #ff8a5b; animation: dotPulse 1.2s infinite; }
+  .state.setup { color: #a6741c; background: #fdf2dc; }
+  .state.setup::before { background: #d99830; box-shadow: 0 0 6px #d99830; }
+  @keyframes dotPulse { 50% { opacity: .45; transform: scale(.8); } }
+
+  .wave {
+    display: flex; gap: 3px; align-items: flex-end; justify-content: center;
+    height: 42px; margin: 14px 0 8px;
+  }
+  .wave span {
+    width: 3px; border-radius: 999px;
+    background: linear-gradient(180deg, #ff8a5b, #ffb04a);
+    animation: waveBar 1.2s ease-in-out infinite;
+  }
+  .wave.quiet span { opacity: .35; background: linear-gradient(180deg, #d8c8b2, #e8dcc9); animation: none; height: 20% !important; }
+  .wave span:nth-child(1){ height: 30%; animation-delay: 0s; }
+  .wave span:nth-child(2){ height: 55%; animation-delay: .06s; }
+  .wave span:nth-child(3){ height: 85%; animation-delay: .12s; }
+  .wave span:nth-child(4){ height: 45%; animation-delay: .18s; }
+  .wave span:nth-child(5){ height: 72%; animation-delay: .24s; }
+  .wave span:nth-child(6){ height: 32%; animation-delay: .30s; }
+  .wave span:nth-child(7){ height: 60%; animation-delay: .36s; }
+  .wave span:nth-child(8){ height: 90%; animation-delay: .42s; }
+  .wave span:nth-child(9){ height: 40%; animation-delay: .48s; }
+  .wave span:nth-child(10){ height: 65%; animation-delay: .54s; }
+  .wave span:nth-child(11){ height: 35%; animation-delay: .60s; }
+  .wave span:nth-child(12){ height: 78%; animation-delay: .66s; }
+  .wave span:nth-child(13){ height: 48%; animation-delay: .72s; }
+  .wave span:nth-child(14){ height: 88%; animation-delay: .78s; }
+  .wave span:nth-child(15){ height: 42%; animation-delay: .84s; }
+  .wave span:nth-child(16){ height: 60%; animation-delay: .90s; }
+  .wave span:nth-child(17){ height: 30%; animation-delay: .96s; }
+  .wave span:nth-child(18){ height: 70%; animation-delay: 1.02s; }
+  .wave span:nth-child(19){ height: 50%; animation-delay: 1.08s; }
+  @keyframes waveBar { 50% { transform: scaleY(0.3); opacity: .7; } }
+
+  .hero-ptt { text-align: center; font-size: 11.5px; color: #8a7d69; font-weight: 500; }
+  .hero-ptt kbd {
+    font-family: "JetBrains Mono", monospace; font-size: 10.5px; font-weight: 500;
+    padding: 3px 7px; border-radius: 6px;
+    background: #fff; border: 1px solid #e8dcc9;
+    box-shadow: 0 1.5px 0 #e8dcc9;
+    color: #2b1f17; margin: 0 1px;
+  }
+  .hero-ptt.blocked { color: #a6741c; }
+
+  /* ── Tab bar ────────────────────────────────────────────────────── */
+  .tabs {
+    display: flex; padding: 8px; gap: 4px;
+    background: #f7ede0;
+    border-bottom: 1px solid #f0e5d8;
+  }
+  .tab {
+    flex: 1; background: transparent; border: none;
+    padding: 8px 0; font: inherit; font-size: 12px; font-weight: 600;
+    color: #8a7d69; border-radius: 999px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: all .15s ease;
+    letter-spacing: -0.005em;
+  }
+  .tab:hover { color: #2b1f17; }
+  .tab.on { background: #fff; color: #2b1f17; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .tab .ico {
+    width: 5px; height: 5px; border-radius: 999px; background: #3d7a5a;
+  }
+  .tab.warn .ico { background: #d99830; }
+
+  /* ── Body ────────────────────────────────────────────────────────── */
+  .body { padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 14px; min-height: 340px; }
+  .section-title {
+    font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: #a0917f; font-weight: 700;
+  }
+  .section-hint { font-size: 12px; color: #8a7d69; line-height: 1.5; margin: 4px 0 0; letter-spacing: -0.005em; }
+
+  /* ── Provider card ──────────────────────────────────────────────── */
+  .provider-card {
+    background: #fff; border: 1px solid #f0e5d8; border-radius: 14px;
+    padding: 14px;
+  }
+  .provider-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+  }
+  .provider-pick {
+    flex: 1;
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; background: #fffaf4; border: 1px solid #f0e5d8;
+    border-radius: 10px; cursor: pointer;
+    font-size: 12.5px; font-weight: 600;
+  }
+  .provider-pick .chev { margin-left: auto; color: #a0917f; font-size: 10px; }
+  .provider-pick .soon { font-size: 10px; color: #a0917f; font-weight: 500; letter-spacing: .02em; }
+  .provider-logo {
+    width: 18px; height: 18px; border-radius: 5px;
+    background: #2b1f17; color: #fffaf4;
+    display: grid; place-items: center;
+    font-family: "JetBrains Mono", monospace; font-size: 10px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .provider-logo.eleven { background: #171717; }
+  .provider-logo.groq { background: #f55036; }
+  .key-card {
+    background: #fff; border: 1px solid #f0e5d8; border-radius: 14px;
+    padding: 14px;
+  }
+  .key-card .label { font-size: 12px; font-weight: 600; color: #8a7d69; margin-bottom: 8px; }
+  .key-card .mask {
+    display: flex; align-items: center; gap: 8px;
+    font-family: "JetBrains Mono", monospace; font-size: 12px; color: #2b1f17;
+    padding: 8px 10px; background: #fffaf4; border: 1px solid #f0e5d8;
+    border-radius: 10px;
+  }
+  .key-card .mask .dots { letter-spacing: 2px; color: #a0917f; }
+  .key-card .mask.empty { color: #a0917f; font-style: italic; }
+  .key-card .actions { display: flex; gap: 6px; margin-top: 10px; align-items: center; }
+
+  .btn {
+    background: #fff; border: 1px solid #f0e5d8; padding: 7px 14px;
+    font: inherit; font-size: 12px; color: #2b1f17; border-radius: 999px;
+    cursor: pointer; font-weight: 600; letter-spacing: -0.005em;
+  }
+  .btn.subtle { background: transparent; border-color: transparent; color: #8a7d69; }
+  .btn.subtle:hover { background: #fff1e4; color: #c85b2a; }
+  .btn.primary { background: #2b1f17; color: #fffaf4; border-color: #2b1f17; }
+  .btn.peach, .btn.add { background: #fff1e4; color: #c85b2a; border-color: #fce1cd; }
+  .btn.xs { padding: 5px 11px; font-size: 11.5px; }
+
+  .pill-saved { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; background: #e3f1e6; color: #3d7a5a; padding: 3px 10px; border-radius: 999px; font-weight: 600; }
+  .pill-saved::before { content: "✓"; font-size: 10px; }
+  .pill-needed { font-size: 11px; color: #a6741c; background: #fdf2dc; padding: 3px 10px; border-radius: 999px; font-weight: 600; }
+  .pill-optional { font-size: 11px; color: #8a7d69; background: #faf1e4; padding: 3px 10px; border-radius: 999px; font-weight: 600; }
+
+  /* ── Rows / toggles ─────────────────────────────────────────────── */
+  .row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid #faf1e4;
+  }
+  .row:last-child { border-bottom: none; }
+  .row-main { display: flex; flex-direction: column; gap: 2px; }
+  .row-t { font-size: 13px; font-weight: 500; }
+  .row-s { font-size: 11.5px; color: #a0917f; }
+
+  .seg { display: flex; gap: 5px; }
+  .seg button {
+    flex: 1; padding: 7px 10px; border: 1px solid #f0e5d8; background: #fffaf4;
+    border-radius: 999px; font: inherit; font-size: 12px; color: #6b5c4a; cursor: pointer; font-weight: 600;
+  }
+  .seg button.on { background: #2b1f17; color: #fffaf4; border-color: #2b1f17; }
+
+  /* ── Model list ──────────────────────────────────────────────────── */
+  .model-list { display: flex; flex-direction: column; gap: 6px; }
+  .model-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border: 1px solid #f0e5d8;
+    background: #fff; border-radius: 12px; cursor: pointer;
+  }
+  .model-item.on { border-color: #2b1f17; box-shadow: 0 0 0 1px #2b1f17; }
+  .model-radio {
+    width: 14px; height: 14px; border-radius: 999px; border: 1.5px solid #d8c8b2;
+    flex-shrink: 0; position: relative;
+  }
+  .model-item.on .model-radio { border-color: #2b1f17; }
+  .model-item.on .model-radio::after { content: ""; position: absolute; inset: 3px; border-radius: 999px; background: #2b1f17; }
+  .model-meta { flex: 1; }
+  .model-name { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; }
+  .model-sub { font-size: 11.5px; color: #a0917f; margin-top: 1px; }
+  .model-tag { font-size: 10px; padding: 2px 7px; border-radius: 999px; background: #fff1e4; color: #c85b2a; font-weight: 600; letter-spacing: .02em; }
+  .model-tag.info { background: #e8eef8; color: #4a6fa5; }
+  .model-tag.free { background: #e3f1e6; color: #3d7a5a; }
+
+  /* ── Sliders ────────────────────────────────────────────────────── */
+  .slider-row { display: flex; align-items: center; gap: 10px; }
+  .slider { flex: 1; height: 4px; background: #f0e5d8; border-radius: 999px; position: relative; }
+  .slider .fill { position: absolute; left: 0; top: 0; bottom: 0; background: #ff8a5b; border-radius: 999px; }
+  .slider .knob { position: absolute; top: 50%; transform: translate(-50%,-50%); width: 14px; height: 14px; border-radius: 999px; background: #fff; border: 2px solid #ff8a5b; box-shadow: 0 2px 4px rgba(0,0,0,.1); }
+  .slider-val { font-family: "JetBrains Mono", monospace; font-size: 11px; color: #6b5c4a; width: 38px; text-align: right; font-weight: 500; }
+
+  /* ── Toggles ────────────────────────────────────────────────────── */
+  .toggle { width: 32px; height: 20px; border-radius: 999px; background: #e8dcc9; position: relative; cursor: pointer; flex-shrink: 0; }
+  .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 999px; background: #fff; transition: transform .2s ease; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  .toggle.on { background: #2b1f17; }
+  .toggle.on::after { transform: translateX(12px); }
+
+  /* ── Shortcut editor ─────────────────────────────────────────────── */
+  .shortcut-edit {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; background: #fffaf4; border: 1px solid #f0e5d8;
+    border-radius: 10px;
+  }
+  .shortcut-edit .keys { flex: 1; display: flex; gap: 4px; }
+  .shortcut-edit kbd {
+    font-family: "JetBrains Mono", monospace; font-size: 10.5px; font-weight: 500;
+    padding: 3px 8px; border-radius: 6px;
+    background: #fff; border: 1px solid #e8dcc9;
+    box-shadow: 0 1.5px 0 #e8dcc9;
+    color: #2b1f17;
+  }
+  .shortcut-edit .rec { font-size: 11px; color: #c85b2a; cursor: pointer; font-weight: 600; }
+
+  /* ── Voice preview ───────────────────────────────────────────────── */
+  .vpreview { padding: 10px 12px; background: #fffaf4; border: 1px solid #f0e5d8; border-radius: 12px; display: flex; align-items: center; gap: 10px; }
+  .play-btn { width: 28px; height: 28px; border-radius: 999px; background: #2b1f17; color: #fffaf4; border: none; display: grid; place-items: center; font-size: 10px; cursor: pointer; }
+  .vpreview-meta { flex: 1; }
+  .vpreview-name { font-size: 12.5px; font-weight: 600; }
+  .vpreview-sub { font-size: 11px; color: #a0917f; }
+
+  /* ── Context meter ───────────────────────────────────────────────── */
+  .context-bar { padding: 12px; background: #fffaf4; border: 1px solid #f0e5d8; border-radius: 12px; }
+  .context-meta { display: flex; justify-content: space-between; font-size: 11.5px; color: #6b5c4a; margin-bottom: 8px; font-weight: 500; }
+  .context-bar .bar { height: 4px; background: #f0e5d8; border-radius: 999px; overflow: hidden; position: relative; }
+  .context-bar .bar .f { position: absolute; left: 0; top: 0; bottom: 0; width: 35%; background: linear-gradient(90deg, #ff8a5b, #ffb04a); }
+
+  /* ── Tour / replay card ──────────────────────────────────────────── */
+  .tour-card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px; background: #fff4e8; border: 1px solid #fce1cd;
+    border-radius: 14px;
+  }
+  .tour-icon {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(135deg, #ff8a5b, #ffb04a);
+    display: grid; place-items: center; color: #fff;
+    font-family: "Instrument Serif", serif; font-size: 18px; font-style: italic;
+    flex-shrink: 0;
+  }
+  .tour-meta { flex: 1; }
+  .tour-title { font-size: 13px; font-weight: 600; }
+  .tour-sub { font-size: 11.5px; color: #8a7d69; margin-top: 2px; line-height: 1.4; }
+
+  /* ── Setup banner (Mind tab when setup needed) ───────────────────── */
+  .setup-banner {
+    padding: 12px 14px; border-radius: 14px;
+    background: #fdf2dc; border: 1px solid #f4e3bd;
+    font-size: 12px; color: #7a5310; line-height: 1.5;
+  }
+  .setup-banner b { font-weight: 700; color: #5c3d05; }
+
+  /* ── Footer ─────────────────────────────────────────────────────── */
+  .footer-bar {
+    padding: 10px 16px 14px;
+    display: flex; gap: 6px; justify-content: flex-end;
+    border-top: 1px solid #f0e5d8;
+    background: #fffaf4;
+  }
+  .footer-bar button {
+    background: #fff; border: 1px solid #f0e5d8;
+    padding: 7px 16px; font: inherit; font-size: 11.5px; color: #6b5c4a;
+    border-radius: 999px; cursor: pointer; font-weight: 600;
+  }
+  .footer-bar button.q { background: #fff1e4; color: #c85b2a; border-color: #fce1cd; }
+
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Flicky <em style="font-style: italic; color:#8a8a97">— v4 tabs</em></h1>
+  <p>Four tabs named after what Flicky <em>does</em>, not what powers it. All three keys are required before "Ready." New typography: Instrument Serif for the brand, Plus Jakarta Sans for UI.</p>
+  <div class="notes">
+    <span>Mind · the brain</span>
+    <span>Voice · how it speaks</span>
+    <span>Ear · how it hears you</span>
+    <span>General · everything else</span>
+  </div>
+</div>
+
+<div class="lineup">
+
+  <!-- ═══════════════ TAB 1: MIND ═══════════════ -->
+  <div class="card-slot">
+    <div class="slot-head"><div class="slot-num">01</div><div class="slot-name">Mind</div><div class="slot-tag">reasoning</div></div>
+    <div class="panel">
+      <div class="hero">
+        <div class="hero-top">
+          <div class="logo">F</div>
+          <div>
+            <div class="brand-name">Flicky</div>
+            <div class="brand-sub">your voice companion</div>
+          </div>
+          <div class="state setup">Setup · 2 of 3</div>
+        </div>
+        <div class="wave quiet">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="hero-ptt blocked">add the missing key to start talking</div>
+      </div>
+      <div class="tabs">
+        <button class="tab on"><span class="ico"></span>Mind</button>
+        <button class="tab"><span class="ico"></span>Voice</button>
+        <button class="tab warn"><span class="ico"></span>Ear</button>
+        <button class="tab"><span class="ico"></span>General</button>
+      </div>
+      <div class="body">
+        <div class="provider-card">
+          <div class="section-title" style="margin-bottom:8px">Model provider</div>
+          <div class="provider-header">
+            <div class="provider-pick">
+              <div class="provider-logo">A</div>
+              <span>Anthropic</span>
+              <span class="soon">more soon</span>
+              <span class="chev">▾</span>
+            </div>
+          </div>
+          <div class="label">API key</div>
+          <div class="mask">
+            <span>sk-ant-api</span><span class="dots">••••••••</span><span>8f4c</span>
+          </div>
+          <div class="actions">
+            <button class="btn xs">Replace</button>
+            <button class="btn xs subtle">Remove</button>
+            <span class="pill-saved" style="margin-left:auto">Connected</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-bottom:8px">Model</div>
+          <div class="model-list">
+            <div class="model-item on">
+              <div class="model-radio"></div>
+              <div class="model-meta">
+                <div class="model-name">Claude Sonnet 4.6</div>
+                <div class="model-sub">fast · balanced · default</div>
+              </div>
+              <div class="model-tag info">recommended</div>
+            </div>
+            <div class="model-item">
+              <div class="model-radio"></div>
+              <div class="model-meta">
+                <div class="model-name">Claude Opus 4.6</div>
+                <div class="model-sub">deepest reasoning · slower</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-bottom:8px">Reasoning depth</div>
+          <p class="section-hint" style="margin-bottom:8px">How much Flicky thinks before replying.</p>
+          <div class="seg">
+            <button class="on">Off</button>
+            <button>Medium</button>
+            <button>Deep</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-bottom:8px">Reply tone</div>
+          <div class="seg">
+            <button>Concise</button>
+            <button class="on">Friendly</button>
+            <button>Detailed</button>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bar">
+        <button class="q">Quit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ TAB 2: VOICE ═══════════════ -->
+  <div class="card-slot">
+    <div class="slot-head"><div class="slot-num">02</div><div class="slot-name">Voice</div><div class="slot-tag">speaks replies</div></div>
+    <div class="panel">
+      <div class="hero">
+        <div class="hero-top">
+          <div class="logo">F</div>
+          <div>
+            <div class="brand-name">Flicky</div>
+            <div class="brand-sub">your voice companion</div>
+          </div>
+          <div class="state">Ready</div>
+        </div>
+        <div class="wave">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="hero-ptt">hold <kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>X</kbd> to talk</div>
+      </div>
+      <div class="tabs">
+        <button class="tab"><span class="ico"></span>Mind</button>
+        <button class="tab on"><span class="ico"></span>Voice</button>
+        <button class="tab"><span class="ico"></span>Ear</button>
+        <button class="tab"><span class="ico"></span>General</button>
+      </div>
+      <div class="body">
+        <div class="provider-card">
+          <div class="section-title" style="margin-bottom:8px">Voice provider</div>
+          <div class="provider-header">
+            <div class="provider-pick">
+              <div class="provider-logo eleven">11</div>
+              <span>ElevenLabs</span>
+              <span class="soon">more soon</span>
+              <span class="chev">▾</span>
+            </div>
+          </div>
+          <div class="label">API key</div>
+          <div class="mask">
+            <span>xi-</span><span class="dots">••••••••••••</span><span>a20b</span>
+          </div>
+          <div class="actions">
+            <button class="btn xs">Replace</button>
+            <button class="btn xs subtle">Remove</button>
+            <span class="pill-saved" style="margin-left:auto">Connected</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-bottom:8px">Voice</div>
+          <div class="vpreview">
+            <button class="play-btn">▶</button>
+            <div class="vpreview-meta">
+              <div class="vpreview-name">Rachel</div>
+              <div class="vpreview-sub">warm · conversational · en-US</div>
+            </div>
+            <button class="btn xs">Change</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-bottom:8px">Speed</div>
+          <div class="slider-row">
+            <div class="slider"><div class="fill" style="width:60%"></div><div class="knob" style="left:60%"></div></div>
+            <div class="slider-val">1.0×</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-bottom:8px">Stability</div>
+          <div class="slider-row">
+            <div class="slider"><div class="fill" style="width:75%"></div><div class="knob" style="left:75%"></div></div>
+            <div class="slider-val">0.75</div>
+          </div>
+        </div>
+
+        <div class="row" style="padding-top:2px">
+          <div class="row-main">
+            <div class="row-t">Speak replies aloud</div>
+            <div class="row-s">auto-play voice response</div>
+          </div>
+          <div class="toggle on"></div>
+        </div>
+      </div>
+      <div class="footer-bar">
+        <button class="q">Quit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ TAB 3: EAR ═══════════════ -->
+  <div class="card-slot">
+    <div class="slot-head"><div class="slot-num">03</div><div class="slot-name">Ear</div><div class="slot-tag">hears you</div></div>
+    <div class="panel">
+      <div class="hero">
+        <div class="hero-top">
+          <div class="logo">F</div>
+          <div>
+            <div class="brand-name">Flicky</div>
+            <div class="brand-sub">your voice companion</div>
+          </div>
+          <div class="state setup">Setup · 2 of 3</div>
+        </div>
+        <div class="wave quiet">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="hero-ptt blocked">one more key needed to start talking</div>
+      </div>
+      <div class="tabs">
+        <button class="tab"><span class="ico"></span>Mind</button>
+        <button class="tab"><span class="ico"></span>Voice</button>
+        <button class="tab on warn"><span class="ico"></span>Ear</button>
+        <button class="tab"><span class="ico"></span>General</button>
+      </div>
+      <div class="body">
+        <div class="provider-card">
+          <div class="section-title" style="margin-bottom:8px">Transcription provider</div>
+          <div class="provider-header">
+            <div class="provider-pick">
+              <div class="provider-logo groq">G</div>
+              <span>Groq</span>
+              <span class="soon">more soon</span>
+              <span class="chev">▾</span>
+            </div>
+          </div>
+          <div class="label">API key</div>
+          <div class="mask empty">not configured</div>
+          <div class="actions">
+            <button class="btn xs add">+ Add key</button>
+            <span class="pill-needed" style="margin-left:auto">Needed</span>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-bottom:8px">Model</div>
+          <div class="model-list">
+            <div class="model-item">
+              <div class="model-radio"></div>
+              <div class="model-meta">
+                <div class="model-name">Whisper Large v3</div>
+                <div class="model-sub">highest accuracy · multilingual</div>
+              </div>
+            </div>
+            <div class="model-item on">
+              <div class="model-radio"></div>
+              <div class="model-meta">
+                <div class="model-name">Whisper Large v3 Turbo</div>
+                <div class="model-sub">fast · multilingual</div>
+              </div>
+              <div class="model-tag info">default</div>
+            </div>
+            <div class="model-item">
+              <div class="model-radio"></div>
+              <div class="model-meta">
+                <div class="model-name">Distil Whisper English</div>
+                <div class="model-sub">fastest · english only</div>
+              </div>
+              <div class="model-tag free">fastest</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bar">
+        <button class="q">Quit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ TAB 4: GENERAL ═══════════════ -->
+  <div class="card-slot">
+    <div class="slot-head"><div class="slot-num">04</div><div class="slot-name">General</div><div class="slot-tag">hotkeys · context · tour</div></div>
+    <div class="panel">
+      <div class="hero">
+        <div class="hero-top">
+          <div class="logo">F</div>
+          <div>
+            <div class="brand-name">Flicky</div>
+            <div class="brand-sub">your voice companion</div>
+          </div>
+          <div class="state">Ready</div>
+        </div>
+        <div class="wave">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="hero-ptt">hold <kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>X</kbd> to talk</div>
+      </div>
+      <div class="tabs">
+        <button class="tab"><span class="ico"></span>Mind</button>
+        <button class="tab"><span class="ico"></span>Voice</button>
+        <button class="tab"><span class="ico"></span>Ear</button>
+        <button class="tab on"><span class="ico"></span>General</button>
+      </div>
+      <div class="body">
+        <div>
+          <div class="section-title" style="margin-bottom:6px">Shortcut</div>
+          <div class="row" style="padding:8px 0">
+            <div class="row-main">
+              <div class="row-t">Push to talk</div>
+              <div class="row-s">hold to speak</div>
+            </div>
+            <div class="shortcut-edit">
+              <div class="keys"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>X</kbd></div>
+              <span class="rec">edit</span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-bottom:8px">Memory</div>
+          <p class="section-hint" style="margin-bottom:10px">Flicky auto-compacts older messages into a summary near the 250k cap so the conversation can run forever.</p>
+          <div class="context-bar">
+            <div class="context-meta">
+              <span><b style="color:#2b1f17">124k</b> / 250k tokens</span>
+              <span style="color:#3d7a5a">healthy</span>
+            </div>
+            <div class="bar"><div class="f" style="width:49.6%; background:linear-gradient(90deg,#3d7a5a,#ffb04a 70%,#c85b2a)"></div></div>
+            <div style="display:flex; justify-content:space-between; font-size:11px; color:#a0917f; margin-top:8px">
+              <span>42 messages · 3 summarized</span>
+              <span>last compact 12m ago</span>
+            </div>
+          </div>
+          <div style="display:flex; gap:6px; margin-top:8px">
+            <button class="btn xs">Compact now</button>
+            <button class="btn xs subtle">Clear memory</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-bottom:8px">Companion</div>
+          <div class="row" style="padding:8px 0">
+            <div class="row-main">
+              <div class="row-t">Show cursor</div>
+              <div class="row-s">blue pointer on screen</div>
+            </div>
+            <div class="toggle on"></div>
+          </div>
+          <div class="row" style="padding:8px 0">
+            <div class="row-main">
+              <div class="row-t">Launch at login</div>
+              <div class="row-s">open Flicky on startup</div>
+            </div>
+            <div class="toggle"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="section-title" style="margin-bottom:8px">Tour</div>
+          <div class="tour-card">
+            <div class="tour-icon">F</div>
+            <div class="tour-meta">
+              <div class="tour-title">Replay the welcome tour</div>
+              <div class="tour-sub">A one-minute walkthrough of what Flicky can do and how to use it.</div>
+            </div>
+            <button class="btn xs">Play</button>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bar">
+        <button class="q">Quit</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,7 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
-import type { ClaudeModel, GroqTranscriptionModel, TranscriptionProviderType } from '../../shared/types';
+import type {
+  ClaudeModel,
+  GroqTranscriptionModel,
+  TranscriptionProviderType,
+  ReasoningDepth,
+  ReplyTone,
+} from '../../shared/types';
 
 /**
  * Simple JSON-file settings store.
@@ -10,17 +16,39 @@ import type { ClaudeModel, GroqTranscriptionModel, TranscriptionProviderType } f
 
 export interface StoredSettings {
   selectedModel: ClaudeModel;
+  reasoningDepth: ReasoningDepth;
+  replyTone: ReplyTone;
+
+  voiceId: string;
+  voiceSpeed: number;
+  voiceStability: number;
+  speakReplies: boolean;
+
   groqTranscriptionModel: GroqTranscriptionModel;
-  isClickyCursorEnabled: boolean;
   transcriptionProvider: TranscriptionProviderType;
+
+  isClickyCursorEnabled: boolean;
+  launchAtLogin: boolean;
+
   onboardingComplete: boolean;
 }
 
 const DEFAULTS: StoredSettings = {
   selectedModel: 'claude-sonnet-4-6',
+  reasoningDepth: 'off',
+  replyTone: 'friendly',
+
+  voiceId: 'pMsXgVXv3BLzUgSXRplE',
+  voiceSpeed: 1.0,
+  voiceStability: 0.5,
+  speakReplies: true,
+
   groqTranscriptionModel: 'whisper-large-v3-turbo',
-  isClickyCursorEnabled: true,
   transcriptionProvider: 'groq',
+
+  isClickyCursorEnabled: true,
+  launchAtLogin: false,
+
   onboardingComplete: false,
 };
 

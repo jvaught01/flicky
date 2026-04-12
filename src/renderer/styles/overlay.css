@@ -57,23 +57,11 @@
   }
 }
 
-/* ── Waveform Visualizer ────────────────────────────────────────────── */
+/* ── Waveform Visualizer (positions the shared <Waveform>) ─────────── */
 
-.waveform {
+.overlay-waveform {
   position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 24px;
   padding: 0 var(--space-sm);
-}
-
-.waveform-bar {
-  width: 3px;
-  border-radius: 2px;
-  background: var(--cursor-blue);
-  transition: height 0.07s ease;
-  min-height: 3px;
 }
 
 /* ── Spinner ────────────────────────────────────────────────────────── */

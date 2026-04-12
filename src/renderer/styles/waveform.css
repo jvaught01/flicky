@@ -1,0 +1,63 @@
+/* ── Shared waveform component ────────────────────────────────────── */
+
+.wf {
+  display: flex;
+  gap: 3px;
+  align-items: flex-end;
+  justify-content: center;
+  height: var(--wf-height, 42px);
+}
+
+.wf-bar {
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ff8a5b, #ffb04a);
+}
+
+/* Pseudo-randomized resting heights per index */
+.wf-bar:nth-child(1)  { height: 30%; }
+.wf-bar:nth-child(2)  { height: 55%; }
+.wf-bar:nth-child(3)  { height: 85%; }
+.wf-bar:nth-child(4)  { height: 45%; }
+.wf-bar:nth-child(5)  { height: 72%; }
+.wf-bar:nth-child(6)  { height: 32%; }
+.wf-bar:nth-child(7)  { height: 60%; }
+.wf-bar:nth-child(8)  { height: 90%; }
+.wf-bar:nth-child(9)  { height: 40%; }
+.wf-bar:nth-child(10) { height: 65%; }
+.wf-bar:nth-child(11) { height: 35%; }
+.wf-bar:nth-child(12) { height: 78%; }
+.wf-bar:nth-child(13) { height: 48%; }
+.wf-bar:nth-child(14) { height: 88%; }
+.wf-bar:nth-child(15) { height: 42%; }
+.wf-bar:nth-child(16) { height: 60%; }
+.wf-bar:nth-child(17) { height: 30%; }
+.wf-bar:nth-child(18) { height: 70%; }
+.wf-bar:nth-child(19) { height: 50%; }
+
+.wf-active .wf-bar {
+  animation: wf-pulse 1.2s ease-in-out infinite;
+}
+
+.wf-responding .wf-bar {
+  background: linear-gradient(180deg, #7c3aed, #38bdf8);
+}
+
+.wf-quiet .wf-bar {
+  opacity: 0.45;
+  background: linear-gradient(180deg, #d8c8b2, #e8dcc9);
+  height: 22% !important;
+}
+
+.wf-processing .wf-bar {
+  animation: wf-breathe 1.6s ease-in-out infinite;
+  opacity: 0.6;
+}
+
+@keyframes wf-pulse {
+  50% { transform: scaleY(0.3); opacity: 0.7; }
+}
+
+@keyframes wf-breathe {
+  50% { transform: scaleY(0.55); }
+}

@@ -1,12 +1,16 @@
-import type { ConversationTurn, ScreenCapture, ClaudeModel } from '../../shared/types';
+import type {
+  ConversationTurn,
+  ScreenCapture,
+  ClaudeModel,
+  ReasoningDepth,
+  ReplyTone,
+} from '../../shared/types';
 import { getApiKey } from './key-store';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 
-const SYSTEM_PROMPT = `you are flicky, a friendly screen-aware ai companion that lives on the user's desktop.
-
-tone: all lowercase, casual, warm, concise. 1-2 sentences unless the user asks you to elaborate.
+const BASE_PROMPT = `you are flicky, a friendly screen-aware ai companion that lives on the user's desktop.
 
 you can see the user's screen — reference specific things you see. if the user asks about something on screen, describe what you notice.
 
@@ -18,12 +22,33 @@ when you want to show the user something on screen, use the tag: [POINT:x,y:labe
 - be precise: aim for the center of the UI element, button, or text you want to highlight
 - always point when showing the user where something is or telling them to click/interact with something
 
-never use abbreviations, lists, or markdown formatting. speak naturally like a friend.`;
+never use markdown formatting. speak naturally like a friend.`;
+
+const TONE_STYLES: Record<ReplyTone, string> = {
+  concise:
+    'tone: all lowercase, direct, minimal. respond in 1 short sentence unless the user explicitly asks for more. no pleasantries.',
+  friendly:
+    'tone: all lowercase, casual, warm, concise. 1-2 sentences unless the user asks you to elaborate. never use abbreviations or lists.',
+  detailed:
+    'tone: lowercase, warm, and thorough. explain your reasoning briefly when it helps. up to 4 sentences; expand further if the user asks.',
+};
+
+/** Claude extended-thinking budget tokens for each depth setting. */
+const THINKING_BUDGETS: Record<ReasoningDepth, number> = {
+  off: 0,
+  medium: 4000,
+  deep: 16000,
+};
 
 export interface ClaudeStreamCallbacks {
   onChunk: (text: string) => void;
-  onComplete: (fullText: string) => void;
+  onComplete: (fullText: string, usage?: { inputTokens: number; outputTokens: number }) => void;
   onError: (error: Error) => void;
+}
+
+export interface ClaudeChatOptions {
+  reasoningDepth: ReasoningDepth;
+  replyTone: ReplyTone;
 }
 
 export class ClaudeAPI {
@@ -32,6 +57,7 @@ export class ClaudeAPI {
     screenshots: ScreenCapture[],
     history: ConversationTurn[],
     model: ClaudeModel,
+    options: ClaudeChatOptions,
     callbacks: ClaudeStreamCallbacks,
   ): Promise<void> {
     const apiKey = getApiKey('anthropic');
@@ -40,7 +66,8 @@ export class ClaudeAPI {
       return;
     }
 
-    // Build message content: images first, then prompt
+    const systemPrompt = `${BASE_PROMPT}\n\n${TONE_STYLES[options.replyTone]}`;
+
     const imageContent = screenshots.map((sc) => ({
       type: 'image' as const,
       source: {
@@ -55,32 +82,36 @@ export class ClaudeAPI {
       text: `[screen${i}] image is ${sc.imageWidth}x${sc.imageHeight} pixels. top-left is (0,0), bottom-right is (${sc.imageWidth},${sc.imageHeight}). use these pixel coordinates for POINT tags.${sc.isCursorScreen ? ' (this is the active screen — user cursor is here)' : ''}`,
     }));
 
-    // Interleave labels with images
     const mediaContent: Array<Record<string, unknown>> = [];
     for (let i = 0; i < screenshots.length; i++) {
       mediaContent.push(imageLabels[i]);
       mediaContent.push(imageContent[i]);
     }
 
-    // Build messages array with history
     const messages: Array<{ role: string; content: unknown }> = [];
     for (const turn of history) {
       messages.push({ role: turn.role, content: turn.content });
     }
-
-    // Current user message with screenshots + prompt
     messages.push({
       role: 'user',
       content: [...mediaContent, { type: 'text', text: prompt }],
     });
 
-    const body = JSON.stringify({
+    const thinkingBudget = THINKING_BUDGETS[options.reasoningDepth];
+    const requestBody: Record<string, unknown> = {
       model,
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
+      max_tokens: thinkingBudget > 0 ? thinkingBudget + 1024 : 1024,
+      system: systemPrompt,
       messages,
       stream: true,
-    });
+    };
+
+    if (thinkingBudget > 0) {
+      requestBody.thinking = {
+        type: 'enabled',
+        budget_tokens: thinkingBudget,
+      };
+    }
 
     try {
       const response = await fetch(ANTHROPIC_API_URL, {
@@ -90,7 +121,7 @@ export class ClaudeAPI {
           'x-api-key': apiKey,
           'anthropic-version': ANTHROPIC_VERSION,
         },
-        body,
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -104,6 +135,8 @@ export class ClaudeAPI {
       const decoder = new TextDecoder();
       let fullText = '';
       let buffer = '';
+      let inputTokens = 0;
+      let outputTokens = 0;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -124,6 +157,10 @@ export class ClaudeAPI {
               const chunk = event.delta.text;
               fullText += chunk;
               callbacks.onChunk(chunk);
+            } else if (event.type === 'message_start' && event.message?.usage) {
+              inputTokens = event.message.usage.input_tokens ?? 0;
+            } else if (event.type === 'message_delta' && event.usage?.output_tokens) {
+              outputTokens = event.usage.output_tokens;
             }
           } catch {
             // Skip malformed JSON lines
@@ -131,7 +168,7 @@ export class ClaudeAPI {
         }
       }
 
-      callbacks.onComplete(fullText);
+      callbacks.onComplete(fullText, { inputTokens, outputTokens });
     } catch (err) {
       callbacks.onError(err instanceof Error ? err : new Error(String(err)));
     }

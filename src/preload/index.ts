@@ -8,49 +8,50 @@ import type {
   VoiceState,
   TranscriptionResult,
   DetectedElement,
+  ReasoningDepth,
+  ReplyTone,
+  MemoryStats,
 } from '../shared/types';
 
 const api = {
   // ── Settings ───────────────────────────────────────────────────────
-  getSettings: (): Promise<FlickySettings> =>
-    ipcRenderer.invoke(IPC.GET_SETTINGS),
+  getSettings: (): Promise<FlickySettings> => ipcRenderer.invoke(IPC.GET_SETTINGS),
 
-  setModel: (model: ClaudeModel): void =>
-    ipcRenderer.send(IPC.SET_MODEL, model),
+  setModel: (model: ClaudeModel): void => ipcRenderer.send(IPC.SET_MODEL, model),
+  setReasoningDepth: (depth: ReasoningDepth): void => ipcRenderer.send(IPC.SET_REASONING_DEPTH, depth),
+  setReplyTone: (tone: ReplyTone): void => ipcRenderer.send(IPC.SET_REPLY_TONE, tone),
 
-  toggleCursor: (enabled: boolean): void =>
-    ipcRenderer.send(IPC.TOGGLE_CURSOR, enabled),
+  setVoiceId: (id: string): void => ipcRenderer.send(IPC.SET_VOICE_ID, id),
+  setVoiceSpeed: (speed: number): void => ipcRenderer.send(IPC.SET_VOICE_SPEED, speed),
+  setVoiceStability: (stability: number): void => ipcRenderer.send(IPC.SET_VOICE_STABILITY, stability),
+  setSpeakReplies: (enabled: boolean): void => ipcRenderer.send(IPC.SET_SPEAK_REPLIES, enabled),
 
-  setGroqModel: (model: GroqTranscriptionModel): void =>
-    ipcRenderer.send(IPC.SET_GROQ_MODEL, model),
+  setGroqModel: (model: GroqTranscriptionModel): void => ipcRenderer.send(IPC.SET_GROQ_MODEL, model),
+
+  toggleCursor: (enabled: boolean): void => ipcRenderer.send(IPC.TOGGLE_CURSOR, enabled),
+  setLaunchAtLogin: (enabled: boolean): void => ipcRenderer.send(IPC.SET_LAUNCH_AT_LOGIN, enabled),
+
+  playVoicePreview: (voiceId: string): void => ipcRenderer.send(IPC.PLAY_VOICE_PREVIEW, voiceId),
 
   // ── Permissions ────────────────────────────────────────────────────
-  getPermissions: (): Promise<Record<string, boolean>> =>
-    ipcRenderer.invoke(IPC.GET_PERMISSIONS),
-
-  requestPermission: (kind: string): void =>
-    ipcRenderer.send(IPC.REQUEST_PERMISSION, kind),
+  getPermissions: (): Promise<Record<string, boolean>> => ipcRenderer.invoke(IPC.GET_PERMISSIONS),
+  requestPermission: (kind: string): void => ipcRenderer.send(IPC.REQUEST_PERMISSION, kind),
 
   // ── API Keys ───────────────────────────────────────────────────────
-  setApiKey: (name: ApiKeyName, value: string): void =>
-    ipcRenderer.send(IPC.SET_API_KEY, name, value),
-
-  deleteApiKey: (name: ApiKeyName): void =>
-    ipcRenderer.send(IPC.DELETE_API_KEY, name),
-
+  setApiKey: (name: ApiKeyName, value: string): void => ipcRenderer.send(IPC.SET_API_KEY, name, value),
+  deleteApiKey: (name: ApiKeyName): void => ipcRenderer.send(IPC.DELETE_API_KEY, name),
   getApiKeyStatus: (): Promise<Record<ApiKeyName, boolean>> =>
     ipcRenderer.invoke(IPC.GET_API_KEY_STATUS),
 
-  // ── Lifecycle ──────────────────────────────────────────────────────
-  openExternal: (url: string): void =>
-    ipcRenderer.send(IPC.OPEN_EXTERNAL, url),
-
-  quit: (): void => ipcRenderer.send(IPC.QUIT_APP),
-
-  replayOnboarding: (): void => ipcRenderer.send(IPC.REPLAY_ONBOARDING),
-
+  // ── Memory / context ───────────────────────────────────────────────
+  getMemoryStats: (): Promise<MemoryStats> => ipcRenderer.invoke(IPC.GET_MEMORY_STATS),
+  compactContext: (): void => ipcRenderer.send(IPC.COMPACT_CONTEXT),
   clearContext: (): void => ipcRenderer.send(IPC.CLEAR_CONTEXT),
 
+  // ── Lifecycle ──────────────────────────────────────────────────────
+  openExternal: (url: string): void => ipcRenderer.send(IPC.OPEN_EXTERNAL, url),
+  quit: (): void => ipcRenderer.send(IPC.QUIT_APP),
+  replayOnboarding: (): void => ipcRenderer.send(IPC.REPLAY_ONBOARDING),
   completeOnboarding: (): void => ipcRenderer.send(IPC.COMPLETE_ONBOARDING),
 
   // ── Event listeners (Main → Renderer) ──────────────────────────────
@@ -100,6 +101,12 @@ const api = {
     const handler = (_e: Electron.IpcRendererEvent, perms: Record<string, boolean>) => cb(perms);
     ipcRenderer.on(IPC.PERMISSION_STATUS, handler);
     return () => ipcRenderer.removeListener(IPC.PERMISSION_STATUS, handler);
+  },
+
+  onMemoryStats: (cb: (stats: MemoryStats) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, stats: MemoryStats) => cb(stats);
+    ipcRenderer.on(IPC.MEMORY_STATS, handler);
+    return () => ipcRenderer.removeListener(IPC.MEMORY_STATS, handler);
   },
 
   // ── Audio Capture (overlay ↔ main) ──────────────────────────────────
