@@ -29,34 +29,6 @@
   transform: rotate(-35deg) scale(1.3);
 }
 
-/* ── Speech Bubble ──────────────────────────────────────────────────── */
-
-.speech-bubble {
-  position: absolute;
-  max-width: 320px;
-  padding: var(--space-md) var(--space-lg);
-  background: var(--bg-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  color: var(--text-primary);
-  font-size: 13px;
-  line-height: 1.5;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  animation: bubble-in 0.2s ease-out;
-  pointer-events: none;
-}
-
-@keyframes bubble-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
 /* ── Waveform Visualizer (positions the shared <Waveform>) ─────────── */
 
 .overlay-waveform {

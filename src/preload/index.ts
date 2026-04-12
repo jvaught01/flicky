@@ -11,6 +11,7 @@ import type {
   ReasoningDepth,
   ReplyTone,
   MemoryStats,
+  ChatEntry,
 } from '../shared/types';
 
 const api = {
@@ -47,6 +48,10 @@ const api = {
   getMemoryStats: (): Promise<MemoryStats> => ipcRenderer.invoke(IPC.GET_MEMORY_STATS),
   compactContext: (): void => ipcRenderer.send(IPC.COMPACT_CONTEXT),
   clearContext: (): void => ipcRenderer.send(IPC.CLEAR_CONTEXT),
+
+  // ── Chat history ────────────────────────────────────────────────────
+  getChatHistory: (): Promise<ChatEntry[]> => ipcRenderer.invoke(IPC.GET_CHAT_HISTORY),
+  clearChatHistory: (): void => ipcRenderer.send(IPC.CLEAR_CHAT_HISTORY),
 
   // ── Lifecycle ──────────────────────────────────────────────────────
   openExternal: (url: string): void => ipcRenderer.send(IPC.OPEN_EXTERNAL, url),
@@ -107,6 +112,12 @@ const api = {
     const handler = (_e: Electron.IpcRendererEvent, stats: MemoryStats) => cb(stats);
     ipcRenderer.on(IPC.MEMORY_STATS, handler);
     return () => ipcRenderer.removeListener(IPC.MEMORY_STATS, handler);
+  },
+
+  onChatEntryAdded: (cb: (entry: ChatEntry) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, entry: ChatEntry) => cb(entry);
+    ipcRenderer.on(IPC.CHAT_ENTRY_ADDED, handler);
+    return () => ipcRenderer.removeListener(IPC.CHAT_ENTRY_ADDED, handler);
   },
 
   // ── Audio Capture (overlay ↔ main) ──────────────────────────────────

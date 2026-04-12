@@ -84,6 +84,15 @@ export const VOICE_PRESETS: VoicePreset[] = [
   { id: 'VR6AewLTigWG4xSOukaG', name: 'Arnold', description: 'crisp · narration · en-US' },
 ];
 
+// ── Chat History ───────────────────────────────────────────────────────
+
+export interface ChatEntry {
+  id: string;
+  timestamp: number;
+  userText: string;
+  assistantText: string;
+}
+
 // ── Memory / Context ───────────────────────────────────────────────────
 
 export interface MemoryStats {
@@ -161,6 +170,7 @@ export const IPC = {
   SETTINGS_CHANGED: 'settings-changed',
   PERMISSION_STATUS: 'permission-status',
   MEMORY_STATS: 'memory-stats',
+  CHAT_ENTRY_ADDED: 'chat-entry-added',
 
   // Renderer → Main
   PUSH_TO_TALK_START: 'push-to-talk-start',
@@ -185,6 +195,8 @@ export const IPC = {
   CLEAR_CONTEXT: 'clear-context',
   COMPACT_CONTEXT: 'compact-context',
   GET_MEMORY_STATS: 'get-memory-stats',
+  GET_CHAT_HISTORY: 'get-chat-history',
+  CLEAR_CHAT_HISTORY: 'clear-chat-history',
   PLAY_VOICE_PREVIEW: 'play-voice-preview',
 
   // API Key Management

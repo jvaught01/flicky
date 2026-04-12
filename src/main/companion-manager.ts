@@ -7,6 +7,7 @@ import { parsePointTags } from './services/element-detector';
 import { ContextManager } from './services/context-manager';
 import * as settingsStore from './services/settings-store';
 import * as keyStore from './services/key-store';
+import * as chatHistory from './services/chat-history-store';
 import * as analytics from './services/analytics';
 import type {
   VoiceState,
@@ -20,6 +21,7 @@ import type {
   ReasoningDepth,
   ReplyTone,
   MemoryStats,
+  ChatEntry,
 } from '../shared/types';
 
 export interface CompanionCallbacks {
@@ -30,6 +32,7 @@ export interface CompanionCallbacks {
   onElementDetected: (element: DetectedElement | null) => void;
   onSettingsChanged: (settings: FlickySettings) => void;
   onMemoryStatsChanged: (stats: MemoryStats) => void;
+  onChatEntryAdded: (entry: ChatEntry) => void;
   onStartAudioCapture: () => void;
   onStopAudioCapture: () => void;
   onPlayAudio: (audioBuffer: Buffer) => void;
@@ -147,6 +150,16 @@ export class CompanionManager {
 
   getMemoryStats(): MemoryStats {
     return this.context.getStats();
+  }
+
+  // ── Chat history ─────────────────────────────────────────────────────
+
+  getChatHistory(): ChatEntry[] {
+    return chatHistory.getAll();
+  }
+
+  clearChatHistory(): void {
+    chatHistory.clear();
   }
 
   // ── API Keys ─────────────────────────────────────────────────────────
@@ -296,6 +309,12 @@ export class CompanionManager {
             outputTokens: usage?.outputTokens,
           });
           this.emitMemoryStats();
+
+          const entry = chatHistory.append({
+            userText: result.text,
+            assistantText: cleanText,
+          });
+          this.callbacks.onChatEntryAdded(entry);
 
           const element = parsePointTags(fullText, this.lastScreenshots);
           if (element) {

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import type { VoiceState, FlickySettings, MemoryStats } from '../../shared/types';
 import { HomeTab } from './panel/HomeTab';
+import { ChatsTab } from './panel/ChatsTab';
 import { MindTab } from './panel/MindTab';
 import { VoiceTab } from './panel/VoiceTab';
 import { EarTab } from './panel/EarTab';
 import { GeneralTab } from './panel/GeneralTab';
 
-type Tab = 'home' | 'mind' | 'voice' | 'ear' | 'general';
+type Tab = 'home' | 'chats' | 'mind' | 'voice' | 'ear' | 'general';
 
 export function PanelApp() {
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
@@ -54,6 +55,7 @@ export function PanelApp() {
 
         <nav className="nav">
           {navItem('home', 'Home')}
+          {navItem('chats', 'Chats')}
 
           <div className="nav-label">Providers</div>
           {navItem('mind', 'Mind', { needs: !apiKeyStatus.anthropic })}
@@ -81,6 +83,7 @@ export function PanelApp() {
             onNavigate={(t) => setTab(t)}
           />
         )}
+        {tab === 'chats' && <ChatsTab />}
         {tab === 'mind' && <MindTab settings={settings} />}
         {tab === 'voice' && <VoiceTab settings={settings} />}
         {tab === 'ear' && <EarTab settings={settings} />}

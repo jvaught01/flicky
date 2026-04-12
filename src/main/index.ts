@@ -74,11 +74,12 @@ app.whenReady().then(() => {
   companion = new CompanionManager({
     onVoiceStateChanged: (state) => sendToAll(IPC.VOICE_STATE_CHANGED, state),
     onTranscriptUpdate: (result) => sendToAll(IPC.TRANSCRIPT_UPDATE, result),
-    onAiResponseChunk: (chunk) => sendToOverlays(IPC.AI_RESPONSE_CHUNK, chunk),
-    onAiResponseComplete: (text) => sendToAll(IPC.AI_RESPONSE_COMPLETE, text),
+    onAiResponseChunk: (chunk) => sendToPanel(IPC.AI_RESPONSE_CHUNK, chunk),
+    onAiResponseComplete: (text) => sendToPanel(IPC.AI_RESPONSE_COMPLETE, text),
     onElementDetected: (el) => sendToOverlays(IPC.ELEMENT_DETECTED, el),
     onSettingsChanged: (s) => sendToPanel(IPC.SETTINGS_CHANGED, s),
     onMemoryStatsChanged: (stats) => sendToPanel(IPC.MEMORY_STATS, stats),
+    onChatEntryAdded: (entry) => sendToPanel(IPC.CHAT_ENTRY_ADDED, entry),
     onStartAudioCapture: () => sendToOverlays(AUDIO_IPC.START_CAPTURE),
     onStopAudioCapture: () => sendToOverlays(AUDIO_IPC.STOP_CAPTURE),
     onPlayAudio: (buf) => sendToOverlays('play-audio', buf),
@@ -159,6 +160,8 @@ app.whenReady().then(() => {
   ipcMain.on(IPC.COMPACT_CONTEXT, () => { void companion.compactContext(); });
   ipcMain.on(IPC.PLAY_VOICE_PREVIEW, (_e, voiceId) => { void companion.playVoicePreview(voiceId); });
   ipcMain.handle(IPC.GET_MEMORY_STATS, () => companion.getMemoryStats());
+  ipcMain.handle(IPC.GET_CHAT_HISTORY, () => companion.getChatHistory());
+  ipcMain.on(IPC.CLEAR_CHAT_HISTORY, () => companion.clearChatHistory());
 
   // API Key Management
   ipcMain.on(IPC.SET_API_KEY, (_e, name, value) => companion.setApiKey(name, value));
