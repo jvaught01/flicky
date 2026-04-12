@@ -75,6 +75,11 @@ export class ContextManager {
     }
   }
 
+  /** Is there anything we could fold into a summary right now? */
+  canCompact(): boolean {
+    return this.turns.length >= 3;
+  }
+
   totalTokens(): number {
     let sum = this.summaryTokens;
     for (const t of this.turns) sum += t.tokens;
@@ -84,12 +89,17 @@ export class ContextManager {
   /**
    * Summarize everything older than the KEEP_RECENT window into a single
    * rolling summary. If we already have a summary, fold it in.
+   *
+   * When `force` is true (manual "Compact now"), we'll compact even when
+   * the conversation is smaller than the recent window — we keep only the
+   * most recent exchange (2 turns) verbatim and fold everything else in.
    */
-  async compact(): Promise<void> {
-    if (this.turns.length <= KEEP_RECENT) return;
+  async compact(force = false): Promise<void> {
+    const keep = force ? Math.min(2, this.turns.length) : KEEP_RECENT;
+    if (this.turns.length <= keep) return;
 
-    const olderTurns = this.turns.slice(0, this.turns.length - KEEP_RECENT);
-    const recentTurns = this.turns.slice(this.turns.length - KEEP_RECENT);
+    const olderTurns = this.turns.slice(0, this.turns.length - keep);
+    const recentTurns = this.turns.slice(this.turns.length - keep);
 
     const transcript = olderTurns
       .map((t) => `${t.role === 'user' ? 'User' : 'Flicky'}: ${t.content}`)
@@ -106,17 +116,22 @@ export class ContextManager {
 
     try {
       const summary = await this.summarizeViaClaude(prompt);
-      this.summary = summary;
-      this.summaryTokens = approxTokens(summary);
+      this.summary = this.summary
+        ? `${this.summary}\n\n${summary}`.trim()
+        : summary;
+      this.summaryTokens = approxTokens(this.summary);
       this.summarizedCount += olderTurns.length;
       this.turns = recentTurns;
       this.lastCompactedAt = Date.now();
     } catch (err) {
       console.error('[Flicky] context compact failed:', err);
       // Fallback: drop the oldest half of non-recent turns verbatim so we
-      // at least stay under budget, even without a summary.
+      // at least stay under budget, even without a summary. Still set
+      // lastCompactedAt so the UI reflects that we tried.
       const dropCount = Math.ceil(olderTurns.length / 2);
       this.turns = [...olderTurns.slice(dropCount), ...recentTurns];
+      this.summarizedCount += dropCount;
+      this.lastCompactedAt = Date.now();
     }
   }
 

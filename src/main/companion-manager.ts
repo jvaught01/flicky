@@ -181,7 +181,7 @@ export class CompanionManager {
   }
 
   async compactContext(): Promise<void> {
-    await this.context.compact();
+    await this.context.compact(true);
     this.emitMemoryStats();
   }
 

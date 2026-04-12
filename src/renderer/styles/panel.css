@@ -606,18 +606,29 @@ button.provider-pick:hover {
 
 /* ── Shortcut capture mode ─────────────────────────────────────── */
 .shortcut-edit.capture {
-  background: var(--fl-ink);
-  border-color: var(--fl-ink);
+  background: #000;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+  animation: captureGlow 1.6s ease-in-out infinite;
 }
 .shortcut-edit.capture .keys .dim {
-  font-size: 11px; color: rgba(255,255,255,0.5);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+  letter-spacing: 0.02em;
 }
 .shortcut-edit.capture kbd {
-  background: rgba(255,255,255,0.15);
-  border-color: rgba(255,255,255,0.3);
-  color: #fff;
+  background: #fff;
+  border: 1px solid #fff;
+  box-shadow: 0 1.5px 0 rgba(255, 255, 255, 0.4);
+  color: #000;
 }
-.shortcut-edit.capture .rec { color: rgba(255,255,255,0.7); }
+.shortcut-edit.capture .rec {
+  color: #fff;
+  font-weight: 600;
+}
+@keyframes captureGlow {
+  50% { box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.14); }
+}
 
 /* ── Tour card (legacy — kept for General removal cleanup) ─────── */
 .tour-card {
