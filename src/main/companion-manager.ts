@@ -54,6 +54,13 @@ export class CompanionManager {
   private lastScreenshots: ScreenCapture[] = [];
   private isRecording = false;
   private reRegisterShortcut: ((accel: string) => boolean) | null = null;
+  /**
+   * Monotonic turn counter. A new PTT press bumps this; any still-running
+   * LLM callbacks from the previous turn check if their captured id still
+   * matches before they're allowed to mutate shared state.
+   */
+  private turnId = 0;
+  private currentAbort: AbortController | null = null;
 
   constructor(callbacks: CompanionCallbacks) {
     this.callbacks = callbacks;
@@ -283,6 +290,14 @@ export class CompanionManager {
   }
 
   private async startRecording(): Promise<void> {
+    // Bump the turn and abort any in-flight work from the previous one
+    // so the user's new message supersedes whatever Flicky was doing.
+    this.turnId += 1;
+    if (this.currentAbort) {
+      this.currentAbort.abort();
+      this.currentAbort = null;
+    }
+
     this.isRecording = true;
     this.setVoiceState('listening');
     analytics.trackPushToTalkStarted();
@@ -334,14 +349,27 @@ export class CompanionManager {
     }
 
     const settings = settingsStore.getAll();
+    const myTurnId = this.turnId;
+    const abort = new AbortController();
+    this.currentAbort = abort;
     this.setVoiceState('responding');
 
+    // Every side effect below is gated on the turn id. If the user has
+    // already started a new PTT by the time an async callback resolves,
+    // we drop the callback on the floor — no stale UI mutations, no
+    // stale chat entries, no TTS we'd have to kill on arrival.
+    const isCurrent = () => this.turnId === myTurnId;
+
     const mindCallbacks = {
-      onChunk: (chunk: string) => this.callbacks.onAiResponseChunk(chunk),
+      onChunk: (chunk: string) => {
+        if (!isCurrent()) return;
+        this.callbacks.onAiResponseChunk(chunk);
+      },
       onComplete: async (
         fullText: string,
         usage?: { inputTokens: number; outputTokens: number },
       ) => {
+        if (!isCurrent()) return;
         analytics.trackAiResponseReceived(fullText);
 
         const cleanText = fullText.replace(/\[POINT:[^\]]+\]/g, '').trim();
@@ -351,6 +379,7 @@ export class CompanionManager {
           inputTokens: usage?.inputTokens,
           outputTokens: usage?.outputTokens,
         });
+        if (!isCurrent()) return;
         this.emitMemoryStats();
 
         const entry = chatHistory.append({
@@ -372,6 +401,9 @@ export class CompanionManager {
               speed: settings.voiceSpeed,
               stability: settings.voiceStability,
             });
+            // User may have started a new turn while TTS was synthesizing;
+            // don't play an answer they no longer want to hear.
+            if (!isCurrent()) return;
             this.callbacks.onPlayAudio(audioBuffer);
           } catch (err) {
             console.error('TTS error:', err);
@@ -379,10 +411,14 @@ export class CompanionManager {
           }
         }
 
+        if (!isCurrent()) return;
         this.setVoiceState('idle');
-        setTimeout(() => this.callbacks.onElementDetected(null), 6000);
+        setTimeout(() => {
+          if (isCurrent()) this.callbacks.onElementDetected(null);
+        }, 6000);
       },
       onError: (err: Error) => {
+        if (!isCurrent()) return;
         console.error('Mind provider error:', err);
         analytics.trackResponseError(err.message);
         this.setVoiceState('idle');
@@ -392,6 +428,7 @@ export class CompanionManager {
     const mindOptions = {
       reasoningDepth: settings.reasoningDepth,
       replyTone: settings.replyTone,
+      signal: abort.signal,
     };
 
     if (settings.mindProvider === 'openai') {
@@ -413,6 +450,8 @@ export class CompanionManager {
         mindCallbacks,
       );
     }
+
+    if (this.currentAbort === abort) this.currentAbort = null;
   }
 
   handleAudioChunk(buffer: Buffer): void {

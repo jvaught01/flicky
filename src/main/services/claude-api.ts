@@ -27,6 +27,8 @@ export interface ClaudeStreamCallbacks {
 export interface ClaudeChatOptions {
   reasoningDepth: ReasoningDepth;
   replyTone: ReplyTone;
+  /** Aborting mid-stream is treated as a graceful interrupt, not an error. */
+  signal?: AbortSignal;
 }
 
 export class ClaudeAPI {
@@ -111,6 +113,7 @@ export class ClaudeAPI {
           'anthropic-beta': 'web-search-2025-03-05',
         },
         body: JSON.stringify(requestBody),
+        signal: options.signal,
       });
 
       if (!response.ok) {
@@ -159,6 +162,11 @@ export class ClaudeAPI {
 
       callbacks.onComplete(fullText, { inputTokens, outputTokens });
     } catch (err) {
+      // Aborts are expected when the user interrupts with a new turn —
+      // treat them as graceful, not as errors.
+      if (err instanceof Error && (err.name === 'AbortError' || options.signal?.aborted)) {
+        return;
+      }
       callbacks.onError(err instanceof Error ? err : new Error(String(err)));
     }
   }

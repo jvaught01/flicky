@@ -37,6 +37,8 @@ export interface OpenAIStreamCallbacks {
 export interface OpenAIChatOptions {
   reasoningDepth: ReasoningDepth;
   replyTone: ReplyTone;
+  /** Aborting mid-stream is treated as a graceful interrupt, not an error. */
+  signal?: AbortSignal;
 }
 
 export class OpenAIAPI {
@@ -110,6 +112,7 @@ export class OpenAIAPI {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
+        signal: options.signal,
       });
 
       if (!response.ok) {
@@ -155,6 +158,9 @@ export class OpenAIAPI {
 
       callbacks.onComplete(fullText, { inputTokens, outputTokens });
     } catch (err) {
+      if (err instanceof Error && (err.name === 'AbortError' || options.signal?.aborted)) {
+        return;
+      }
       callbacks.onError(err instanceof Error ? err : new Error(String(err)));
     }
   }

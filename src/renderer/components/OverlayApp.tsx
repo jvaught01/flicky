@@ -38,6 +38,19 @@ export function OverlayApp() {
   const scriptNodeRef = useRef<ScriptProcessorNode | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
+  // ── TTS playback (cancelable) ───────────────────────────────────────
+  const ttsRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
+  const stopCurrentTts = useCallback(() => {
+    const current = ttsRef.current;
+    if (!current) return;
+    try {
+      current.audio.pause();
+      current.audio.src = '';
+    } catch { /* ignore */ }
+    URL.revokeObjectURL(current.url);
+    ttsRef.current = null;
+  }, []);
+
   useEffect(() => {
     const startMic = async () => {
       try {
@@ -82,16 +95,23 @@ export function OverlayApp() {
     const unsubStart = window.flicky.onStartCapture(() => startMic());
     const unsubStop = window.flicky.onStopCapture(() => stopMic());
 
-    // Play TTS audio. No visual bubble to clear — we just play and move on.
+    // Play TTS audio. Any previous playback is interrupted first so
+    // back-to-back responses don't stack on top of each other.
     const unsubPlayAudio = window.flicky.onPlayAudio(async (audioData) => {
+      stopCurrentTts();
       try {
         const blob = new Blob([audioData], { type: 'audio/mpeg' });
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
-        audio.onended = () => URL.revokeObjectURL(url);
+        ttsRef.current = { audio, url };
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          if (ttsRef.current?.audio === audio) ttsRef.current = null;
+        };
         await audio.play();
       } catch (err) {
         console.error('[Flicky] Audio playback failed:', err);
+        stopCurrentTts();
       }
     });
 
@@ -205,6 +225,8 @@ export function OverlayApp() {
 
   useEffect(() => {
     if (voiceState === 'listening') {
+      // User started a new turn — interrupt anything Flicky was saying.
+      stopCurrentTts();
       setDetectedElement(null);
       if (holdTimerRef.current) {
         clearTimeout(holdTimerRef.current);
@@ -216,7 +238,7 @@ export function OverlayApp() {
       }
       setCursorModeSync('following');
     }
-  }, [voiceState, setCursorModeSync]);
+  }, [voiceState, setCursorModeSync, stopCurrentTts]);
 
   const isNavigating = cursorMode === 'navigating';
   const isHolding = cursorMode === 'holding';
