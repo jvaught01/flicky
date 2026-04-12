@@ -1,6 +1,6 @@
 /* ── Panel: monochrome dark app window ───────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap');
 
 :root {
   --fl-bg:          #0f0f11;
@@ -27,7 +27,7 @@
 html, body, #root { width: 100%; height: 100%; overflow: hidden; }
 
 body {
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-family: 'Geist', system-ui, -apple-system, sans-serif;
   font-size: 13px;
   color: var(--fl-ink-soft);
   background: var(--fl-bg);
@@ -62,12 +62,13 @@ body {
   background: #fff;
   display: grid; place-items: center;
   color: #0f0f11;
-  font-family: 'Instrument Serif', serif;
+  font-family: 'Fraunces', 'Iowan Old Style', serif;
   font-style: italic; font-weight: 500; font-size: 22px;
+  font-variation-settings: 'opsz' 48, 'SOFT' 50;
 }
 .sidebar-title {
-  font-family: 'Instrument Serif', serif;
-  font-weight: 400; font-size: 24px; letter-spacing: -0.01em; line-height: 1;
+  font-family: 'Geist', system-ui, sans-serif;
+  font-weight: 600; font-size: 18px; letter-spacing: -0.02em; line-height: 1;
   color: var(--fl-ink);
 }
 
@@ -125,13 +126,14 @@ body {
 }
 
 .main-h1 {
-  font-family: 'Instrument Serif', serif;
-  font-weight: 400; font-size: 40px; letter-spacing: -0.02em;
-  line-height: 1.05;
-  margin: 0 0 8px;
+  font-family: 'Fraunces', 'Iowan Old Style', serif;
+  font-weight: 400; font-size: 44px; letter-spacing: -0.025em;
+  line-height: 1.02;
+  margin: 0 0 10px;
   color: var(--fl-ink);
+  font-variation-settings: 'opsz' 120, 'SOFT' 30;
 }
-.main-h1 em { font-style: italic; color: var(--fl-dim); }
+.main-h1 em { font-style: italic; color: var(--fl-dim); font-weight: 300; }
 .main-lead {
   font-size: 14px; color: var(--fl-muted); line-height: 1.6;
   margin: 0 0 28px; max-width: 560px;
@@ -158,7 +160,7 @@ body {
 }
 .home-ptt.blocked { color: var(--fl-warn); }
 .home-ptt kbd {
-  font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 500;
+  font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 11.5px; font-weight: 500;
   padding: 4px 9px; border-radius: 7px;
   background: var(--fl-surface-2);
   border: 1px solid var(--fl-border-strong);
@@ -203,9 +205,10 @@ body {
   margin-bottom: 12px;
 }
 .stat-value {
-  font-family: 'Instrument Serif', serif;
-  font-weight: 400; font-size: 36px; letter-spacing: -0.02em; line-height: 1;
+  font-family: 'Fraunces', 'Iowan Old Style', serif;
+  font-weight: 400; font-size: 38px; letter-spacing: -0.025em; line-height: 1;
   color: var(--fl-ink);
+  font-variation-settings: 'opsz' 72, 'SOFT' 30;
 }
 .stat-sub {
   font-size: 12px; color: var(--fl-muted); margin-top: 8px;
@@ -277,7 +280,7 @@ body {
   width: 20px; height: 20px; border-radius: 6px;
   background: #fff; color: #000;
   display: grid; place-items: center;
-  font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700;
+  font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; font-weight: 700;
   flex-shrink: 0;
 }
 .provider-logo.eleven { background: #2a2a30; color: #fff; }
@@ -289,7 +292,7 @@ body {
 }
 .mask {
   display: flex; align-items: center; gap: 8px;
-  font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: var(--fl-ink);
+  font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; color: var(--fl-ink);
   padding: 10px 12px;
   background: var(--fl-surface-2);
   border: 1px solid var(--fl-border);
@@ -304,7 +307,7 @@ body {
   flex: 1; padding: 10px 12px;
   background: var(--fl-surface-2);
   border: 1px solid var(--fl-border);
-  border-radius: 10px; font-family: 'JetBrains Mono', monospace;
+  border-radius: 10px; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
   font-size: 12.5px; color: var(--fl-ink); outline: none;
 }
 .key-input-row input:focus { border-color: var(--fl-ink); }
@@ -424,7 +427,7 @@ body {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 .slider-val {
-  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 12px;
   color: var(--fl-muted); width: 48px; text-align: right; font-weight: 500;
 }
 
@@ -493,7 +496,7 @@ body {
 }
 .shortcut-edit .keys { display: flex; gap: 4px; }
 .shortcut-edit kbd {
-  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 11px;
   padding: 4px 9px; border-radius: 7px;
   background: var(--fl-surface);
   border: 1px solid var(--fl-border-strong);
@@ -537,8 +540,9 @@ body {
   width: 38px; height: 38px; border-radius: 11px;
   background: #fff;
   display: grid; place-items: center; color: #0f0f11;
-  font-family: 'Instrument Serif', serif;
-  font-size: 20px; font-style: italic;
+  font-family: 'Fraunces', 'Iowan Old Style', serif;
+  font-size: 20px; font-style: italic; font-weight: 500;
+  font-variation-settings: 'opsz' 48, 'SOFT' 50;
   flex-shrink: 0;
 }
 .tour-meta { flex: 1; }
