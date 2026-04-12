@@ -98,7 +98,8 @@ export class OpenAIAPI {
       messages,
       stream: true,
       stream_options: { include_usage: true },
-      max_tokens: 1024,
+      // Newer OpenAI models (GPT-5, o-series) require this instead of max_tokens.
+      max_completion_tokens: 1024,
     };
 
     const effort = DEPTH_TO_EFFORT[options.reasoningDepth];
