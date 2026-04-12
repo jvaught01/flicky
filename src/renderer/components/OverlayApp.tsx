@@ -325,11 +325,11 @@ export function OverlayApp() {
             />
           </div>
 
-          {/* Speech bubble — sits to the right of the 44px orb (8px gap + 44px + 8px margin) */}
+          {/* Speech bubble — sits to the right of the pointer cursor body (~38px) */}
           {responseText && (
             <div
               className="speech-bubble"
-              style={{ left: companionPos.x + 60, top: companionPos.y - 10 }}
+              style={{ left: companionPos.x + 38, top: companionPos.y - 10 }}
             >
               {responseText}
             </div>
@@ -340,7 +340,7 @@ export function OverlayApp() {
             <div
               className="pointing-bubble"
               style={{
-                left: companionPos.x + 60,
+                left: companionPos.x + 38,
                 top: companionPos.y - 10,
               }}
             >
