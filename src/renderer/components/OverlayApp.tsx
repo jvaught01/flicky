@@ -243,15 +243,60 @@ export function OverlayApp() {
               transition: cursorTransition,
             }}
           >
-            <svg viewBox="0 0 24 28" xmlns="http://www.w3.org/2000/svg">
-              <polygon points="12,0 24,28 0,28" />
+            <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="fl-back" x1="20%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#93c5fd" />
+                  <stop offset="100%" stopColor="#1d4ed8" />
+                </linearGradient>
+                <linearGradient id="fl-front" x1="10%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#e0f2fe" />
+                  <stop offset="50%" stopColor="#7dd3fc" />
+                  <stop offset="100%" stopColor="#2563eb" />
+                </linearGradient>
+              </defs>
+
+              {/* Back layer — offset down/right, darker */}
+              <polygon
+                points="10,14 40,24 20,42"
+                fill="url(#fl-back)"
+                stroke="url(#fl-back)"
+                strokeWidth="3"
+                strokeLinejoin="round"
+                opacity="0.9"
+              />
+
+              {/* Front layer — brighter, glossy */}
+              <polygon
+                points="4,4 34,14 14,32"
+                fill="url(#fl-front)"
+                stroke="url(#fl-front)"
+                strokeWidth="3"
+                strokeLinejoin="round"
+              />
+
+              {/* Upper-left edge gloss highlight */}
+              <polyline
+                points="4,4 34,14"
+                fill="none"
+                stroke="rgba(255,255,255,0.65)"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+              <polyline
+                points="4,4 14,32"
+                fill="none"
+                stroke="rgba(255,255,255,0.4)"
+                strokeWidth="1"
+                strokeLinecap="round"
+              />
             </svg>
           </div>
 
           {voiceState === 'listening' && (
             <div
               className="overlay-waveform"
-              style={{ left: companionPos.x + 30, top: companionPos.y - 4 }}
+              style={{ left: companionPos.x + 44, top: companionPos.y + 2 }}
             >
               <SharedWaveform state="listening" bars={12} height={26} />
             </div>
@@ -260,7 +305,7 @@ export function OverlayApp() {
           {voiceState === 'processing' && (
             <div
               className="processing-spinner"
-              style={{ left: companionPos.x + 30, top: companionPos.y }}
+              style={{ left: companionPos.x + 44, top: companionPos.y + 6 }}
             />
           )}
 
@@ -268,8 +313,8 @@ export function OverlayApp() {
             <div
               className="pointing-bubble"
               style={{
-                left: companionPos.x + 30,
-                top: companionPos.y - 10,
+                left: companionPos.x + 44,
+                top: companionPos.y - 8,
               }}
             >
               {pointingPhrase}
