@@ -15,6 +15,9 @@ let tray: Tray | null = null;
 let panelWindow: BrowserWindow | null = null;
 let overlayWindows: BrowserWindow[] = [];
 let companion: CompanionManager;
+let isAppQuitting = false;
+
+app.on('before-quit', () => { isAppQuitting = true; });
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -67,11 +70,6 @@ function sendToAll(channel: string, ...args: unknown[]): void {
 // ── App Lifecycle ──────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
-  // Hide dock icon on macOS (menu-bar-only app)
-  if (process.platform === 'darwin') {
-    app.dock?.hide();
-  }
-
   // Initialize companion manager
   companion = new CompanionManager({
     onVoiceStateChanged: (state) => sendToAll(IPC.VOICE_STATE_CHANGED, state),
@@ -92,15 +90,8 @@ app.whenReady().then(() => {
 
   console.log('[Flicky] Tray created, registering click handler...');
 
-  tray.on('click', (_event, bounds) => {
-    console.log('[Flicky] Tray clicked, bounds:', bounds);
-    togglePanel(bounds);
-  });
-
-  tray.on('double-click', (_event, bounds) => {
-    console.log('[Flicky] Tray double-clicked, bounds:', bounds);
-    togglePanel(bounds);
-  });
+  tray.on('click', () => togglePanel());
+  tray.on('double-click', () => togglePanel());
 
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -190,6 +181,9 @@ app.whenReady().then(() => {
     const perms = await companion.getPermissions();
     sendToPanel(IPC.PERMISSION_STATUS, perms);
   }, 1500);
+
+  // Open the main window on first launch.
+  togglePanel();
 });
 
 app.on('will-quit', () => {
@@ -203,47 +197,31 @@ app.on('window-all-closed', () => {
 
 // ── Window Management ──────────────────────────────────────────────────
 
-function togglePanel(trayBounds?: Electron.Rectangle): void {
-  console.log('[Flicky] togglePanel called, trayBounds:', trayBounds);
-  console.log('[Flicky] panelWindow exists:', !!panelWindow, 'destroyed:', panelWindow?.isDestroyed(), 'visible:', panelWindow && !panelWindow.isDestroyed() ? panelWindow.isVisible() : 'N/A');
-
+function togglePanel(): void {
   if (panelWindow && !panelWindow.isDestroyed()) {
-    if (panelWindow.isVisible()) {
-      console.log('[Flicky] Panel is visible, hiding...');
+    if (panelWindow.isVisible() && panelWindow.isFocused()) {
       panelWindow.hide();
       return;
     }
-  } else {
-    console.log('[Flicky] Creating new panel window...');
-    panelWindow = createPanelWindow();
-
-    panelWindow.webContents.on('did-finish-load', () => {
-      console.log('[Flicky] Panel webContents finished loading');
-    });
-    panelWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
-      console.error('[Flicky] Panel FAILED to load:', code, desc, url);
-    });
-
-    // DEBUG: disable blur-to-hide for now so we can see the panel
-    // panelWindow.on('blur', () => { panelWindow?.hide(); });
-
-    // Open DevTools to inspect what's rendering
-    panelWindow.webContents.openDevTools({ mode: 'detach' });
+    panelWindow.show();
+    panelWindow.focus();
+    return;
   }
 
-  // Position below tray icon
-  if (trayBounds) {
-    const panelBounds = panelWindow.getBounds();
-    const x = Math.round(trayBounds.x + trayBounds.width / 2 - panelBounds.width / 2);
-    const y = trayBounds.y + trayBounds.height + 4;
-    console.log('[Flicky] Positioning panel at:', x, y);
-    panelWindow.setPosition(x, y, false);
-  }
+  panelWindow = createPanelWindow();
+  panelWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.error('[Flicky] Panel FAILED to load:', code, desc, url);
+  });
+  panelWindow.on('close', (e) => {
+    // Don't destroy on close — hide so reopening is instant and keeps state.
+    if (!isAppQuitting) {
+      e.preventDefault();
+      panelWindow?.hide();
+    }
+  });
 
-  console.log('[Flicky] Showing and focusing panel...');
   panelWindow.show();
   panelWindow.focus();
-  console.log('[Flicky] Panel visible:', panelWindow.isVisible(), 'bounds:', panelWindow.getBounds());
 }
 
 function rebuildOverlays(): void {

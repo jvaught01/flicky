@@ -1,18 +1,18 @@
 import { useState, useEffect } from 'react';
 import type { VoiceState, FlickySettings, MemoryStats } from '../../shared/types';
-import { Hero } from './panel/Hero';
+import { HomeTab } from './panel/HomeTab';
 import { MindTab } from './panel/MindTab';
 import { VoiceTab } from './panel/VoiceTab';
 import { EarTab } from './panel/EarTab';
 import { GeneralTab } from './panel/GeneralTab';
 
-type Tab = 'mind' | 'voice' | 'ear' | 'general';
+type Tab = 'home' | 'mind' | 'voice' | 'ear' | 'general';
 
 export function PanelApp() {
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [settings, setSettings] = useState<FlickySettings | null>(null);
   const [memory, setMemory] = useState<MemoryStats | null>(null);
-  const [tab, setTab] = useState<Tab>('mind');
+  const [tab, setTab] = useState<Tab>('home');
 
   useEffect(() => {
     window.flicky.getSettings().then(setSettings);
@@ -30,49 +30,62 @@ export function PanelApp() {
 
   const { apiKeyStatus } = settings;
 
+  const navItem = (
+    id: Tab,
+    label: string,
+    opts: { needs?: boolean } = {},
+  ) => (
+    <button
+      className={`nav-item ${tab === id ? 'on' : ''}`}
+      onClick={() => setTab(id)}
+    >
+      <span className={`dot ${opts.needs ? 'warn' : ''}`} />
+      <span className="label">{label}</span>
+    </button>
+  );
+
   return (
-    <div className="panel-container">
-      <Hero voiceState={voiceState} settings={settings} />
+    <div className="panel-shell">
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <div className="sidebar-logo">F</div>
+          <div className="sidebar-title">Flicky</div>
+        </div>
 
-      <div className="tabs">
-        <button
-          className={`tab ${tab === 'mind' ? 'on' : ''} ${!apiKeyStatus.anthropic ? 'warn' : ''}`}
-          onClick={() => setTab('mind')}
-        >
-          <span className="ico" />
-          Mind
-        </button>
-        <button
-          className={`tab ${tab === 'voice' ? 'on' : ''} ${!apiKeyStatus.elevenlabs ? 'warn' : ''}`}
-          onClick={() => setTab('voice')}
-        >
-          <span className="ico" />
-          Voice
-        </button>
-        <button
-          className={`tab ${tab === 'ear' ? 'on' : ''} ${!apiKeyStatus.groq ? 'warn' : ''}`}
-          onClick={() => setTab('ear')}
-        >
-          <span className="ico" />
-          Ear
-        </button>
-        <button
-          className={`tab ${tab === 'general' ? 'on' : ''}`}
-          onClick={() => setTab('general')}
-        >
-          <span className="ico" />
-          General
-        </button>
-      </div>
+        <nav className="nav">
+          {navItem('home', 'Home')}
 
-      {tab === 'mind' && <MindTab settings={settings} />}
-      {tab === 'voice' && <VoiceTab settings={settings} />}
-      {tab === 'ear' && <EarTab settings={settings} />}
-      {tab === 'general' && <GeneralTab settings={settings} memory={memory} />}
+          <div className="nav-label">Providers</div>
+          {navItem('mind', 'Mind', { needs: !apiKeyStatus.anthropic })}
+          {navItem('voice', 'Voice', { needs: !apiKeyStatus.elevenlabs })}
+          {navItem('ear', 'Ear', { needs: !apiKeyStatus.groq })}
 
-      <div className="footer-bar">
-        <button className="q" onClick={() => window.flicky.quit()}>Quit</button>
-      </div>
+          <div className="nav-label">System</div>
+          {navItem('general', 'General')}
+        </nav>
+
+        <div className="sidebar-foot">
+          <button className="nav-item quit" onClick={() => window.flicky.quit()}>
+            <span className="label">Quit</span>
+          </button>
+          <div className="sidebar-version">v0.1.0</div>
+        </div>
+      </aside>
+
+      <main className="main">
+        {tab === 'home' && (
+          <HomeTab
+            voiceState={voiceState}
+            settings={settings}
+            memory={memory}
+            onNavigate={(t) => setTab(t)}
+          />
+        )}
+        {tab === 'mind' && <MindTab settings={settings} />}
+        {tab === 'voice' && <VoiceTab settings={settings} />}
+        {tab === 'ear' && <EarTab settings={settings} />}
+        {tab === 'general' && <GeneralTab settings={settings} memory={memory} />}
+      </main>
     </div>
   );
 }

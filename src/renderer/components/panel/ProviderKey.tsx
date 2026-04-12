@@ -8,15 +8,11 @@ interface ProviderKeyProps {
   providerLogoClass?: string;
   isSet: boolean;
   keyPlaceholder: string;
-  sectionTitle: string;
-  sectionHint: string;
-  /** Mask preview e.g. sk-ant-...8f4c (when isSet). Caller provides it; we don't have access to the real key. */
-  maskHint?: string;
 }
 
 /**
- * Unified provider + key card for each service tab.
- * Shows the provider pill, the current key state, and inline input on "Add" / "Replace".
+ * Provider selector pill + API key row. Renders inline inside a .section
+ * card; does not draw its own background.
  */
 export function ProviderKey({
   name,
@@ -25,9 +21,6 @@ export function ProviderKey({
   providerLogoClass,
   isSet,
   keyPlaceholder,
-  sectionTitle,
-  sectionHint,
-  maskHint,
 }: ProviderKeyProps) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState('');
@@ -39,10 +32,7 @@ export function ProviderKey({
     setValue('');
     setEditing(false);
   };
-
-  const remove = () => {
-    window.flicky.deleteApiKey(name);
-  };
+  const remove = () => window.flicky.deleteApiKey(name);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') save();
@@ -53,8 +43,7 @@ export function ProviderKey({
   };
 
   return (
-    <div className="provider-card">
-      <div className="section-title" style={{ marginBottom: 8 }}>{sectionTitle}</div>
+    <>
       <div className="provider-header">
         <div className="provider-pick">
           <div className={`provider-logo ${providerLogoClass ?? ''}`}>{providerLogo}</div>
@@ -68,15 +57,7 @@ export function ProviderKey({
       {isSet && !editing ? (
         <>
           <div className="mask">
-            {maskHint ? (
-              <>
-                <span>{maskHint.split('••••')[0] ?? ''}</span>
-                <span className="dots">••••••••</span>
-                <span>{maskHint.split('••••')[1] ?? ''}</span>
-              </>
-            ) : (
-              <span className="dots">••••••••••••••</span>
-            )}
+            <span className="dots">••••••••••••••••</span>
           </div>
           <div className="actions">
             <button className="btn xs" onClick={() => setEditing(true)}>Replace</button>
@@ -106,8 +87,6 @@ export function ProviderKey({
           </div>
         </>
       )}
-
-      {sectionHint && <p className="section-hint" style={{ marginTop: 8 }}>{sectionHint}</p>}
-    </div>
+    </>
   );
 }

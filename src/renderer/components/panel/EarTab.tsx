@@ -28,20 +28,27 @@ const MODELS: Array<{
 
 export function EarTab({ settings }: EarTabProps) {
   return (
-    <div className="body">
-      <ProviderKey
-        name="groq"
-        providerLabel="Groq"
-        providerLogo="G"
-        providerLogoClass="groq"
-        isSet={settings.apiKeyStatus.groq}
-        keyPlaceholder="gsk_..."
-        sectionTitle="Transcription provider"
-        sectionHint="Transcribes your voice fast and accurately."
-      />
+    <>
+      <h1 className="main-h1">
+        Ear<em>.</em>
+      </h1>
+      <p className="main-lead">How Flicky hears you. Pick a transcription model based on the tradeoff between speed and accuracy.</p>
 
-      <div>
-        <div className="section-title" style={{ marginBottom: 8 }}>Model</div>
+      <div className="section">
+        <div className="section-title">Transcription provider</div>
+        <ProviderKey
+          name="groq"
+          providerLabel="Groq"
+          providerLogo="G"
+          providerLogoClass="groq"
+          isSet={settings.apiKeyStatus.groq}
+          keyPlaceholder="gsk_..."
+        />
+        <p className="section-hint">Transcribes your voice fast and accurately.</p>
+      </div>
+
+      <div className="section">
+        <div className="section-title" style={{ marginBottom: 14 }}>Model</div>
         <div className="model-list">
           {MODELS.map((m) => (
             <button
@@ -59,6 +66,6 @@ export function EarTab({ settings }: EarTabProps) {
           ))}
         </div>
       </div>
-    </div>
+    </>
   );
 }

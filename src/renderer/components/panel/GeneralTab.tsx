@@ -27,16 +27,22 @@ export function GeneralTab({ settings, memory }: GeneralTabProps) {
   const budget = memory?.tokenBudget ?? 250_000;
   const pct = Math.min(100, (tokens / budget) * 100);
   const healthLabel = pct < 60 ? 'healthy' : pct < 85 ? 'getting full' : 'near cap';
-  const healthColor = pct < 60 ? 'var(--fl-green)' : pct < 85 ? 'var(--fl-amber-text)' : 'var(--fl-peach-deep)';
+  const healthColor =
+    pct < 60 ? 'var(--fl-green)' : pct < 85 ? 'var(--fl-amber-text)' : 'var(--fl-peach-deep)';
 
   return (
-    <div className="body">
-      <div>
-        <div className="section-title" style={{ marginBottom: 6 }}>Shortcut</div>
-        <div className="row" style={{ padding: '8px 0' }}>
+    <>
+      <h1 className="main-h1">
+        General<em>.</em>
+      </h1>
+      <p className="main-lead">Shortcuts, memory, the companion cursor, and the welcome tour.</p>
+
+      <div className="section">
+        <div className="section-title" style={{ marginBottom: 10 }}>Shortcut</div>
+        <div className="row">
           <div className="row-main">
             <div className="row-t">Push to talk</div>
-            <div className="row-s">hold to speak</div>
+            <div className="row-s">hold to speak from anywhere on your machine</div>
           </div>
           <div className="shortcut-edit">
             <div className="keys">
@@ -48,9 +54,9 @@ export function GeneralTab({ settings, memory }: GeneralTabProps) {
         </div>
       </div>
 
-      <div>
-        <div className="section-title" style={{ marginBottom: 8 }}>Memory</div>
-        <p className="section-hint" style={{ marginBottom: 10 }}>
+      <div className="section">
+        <div className="section-title">Memory</div>
+        <p className="section-hint" style={{ margin: '6px 0 14px' }}>
           Flicky auto-compacts older messages into a summary near the {formatTokens(budget)} cap so the
           conversation can run forever.
         </p>
@@ -70,18 +76,18 @@ export function GeneralTab({ settings, memory }: GeneralTabProps) {
             <span>last compact {formatRelative(memory?.lastCompactedAt ?? null)}</span>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           <button className="btn xs" onClick={() => window.flicky.compactContext()}>Compact now</button>
           <button className="btn xs subtle" onClick={() => window.flicky.clearContext()}>Clear memory</button>
         </div>
       </div>
 
-      <div>
-        <div className="section-title" style={{ marginBottom: 8 }}>Companion</div>
-        <div className="row" style={{ padding: '8px 0' }}>
+      <div className="section">
+        <div className="section-title" style={{ marginBottom: 4 }}>Companion</div>
+        <div className="row">
           <div className="row-main">
             <div className="row-t">Show cursor</div>
-            <div className="row-s">blue pointer on screen</div>
+            <div className="row-s">blue pointer that flies to things Flicky mentions</div>
           </div>
           <button
             className={`toggle ${settings.isClickyCursorEnabled ? 'on' : ''}`}
@@ -89,10 +95,10 @@ export function GeneralTab({ settings, memory }: GeneralTabProps) {
             aria-label="Toggle cursor"
           />
         </div>
-        <div className="row" style={{ padding: '8px 0' }}>
+        <div className="row">
           <div className="row-main">
             <div className="row-t">Launch at login</div>
-            <div className="row-s">open Flicky on startup</div>
+            <div className="row-s">open Flicky when you sign in</div>
           </div>
           <button
             className={`toggle ${settings.launchAtLogin ? 'on' : ''}`}
@@ -102,8 +108,8 @@ export function GeneralTab({ settings, memory }: GeneralTabProps) {
         </div>
       </div>
 
-      <div>
-        <div className="section-title" style={{ marginBottom: 8 }}>Tour</div>
+      <div className="section">
+        <div className="section-title" style={{ marginBottom: 14 }}>Tour</div>
         <div className="tour-card">
           <div className="tour-icon">F</div>
           <div className="tour-meta">
@@ -115,6 +121,6 @@ export function GeneralTab({ settings, memory }: GeneralTabProps) {
           <button className="btn xs" onClick={() => window.flicky.replayOnboarding()}>Play</button>
         </div>
       </div>
-    </div>
+    </>
   );
 }
