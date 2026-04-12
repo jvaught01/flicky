@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import { writeFileAtomic } from './fs-util';
 import type {
   ClaudeModel,
   OpenAIModel,
@@ -74,7 +75,7 @@ function read(): StoredSettings {
 }
 
 function write(data: StoredSettings): void {
-  fs.writeFileSync(getFilePath(), JSON.stringify(data, null, 2), 'utf-8');
+  writeFileAtomic(getFilePath(), JSON.stringify(data, null, 2));
 }
 
 export function get<K extends keyof StoredSettings>(key: K): StoredSettings[K] {

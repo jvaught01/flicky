@@ -2,6 +2,7 @@ import { safeStorage } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import { writeFileAtomic } from './fs-util';
 
 /**
  * Secure API key storage using Electron's safeStorage API.
@@ -37,7 +38,7 @@ function readKeyFile(): KeyFile {
 }
 
 function writeKeyFile(data: KeyFile): void {
-  fs.writeFileSync(getKeyFilePath(), JSON.stringify(data, null, 2), 'utf-8');
+  writeFileAtomic(getKeyFilePath(), JSON.stringify(data, null, 2));
 }
 
 export function isEncryptionAvailable(): boolean {

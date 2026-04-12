@@ -6,35 +6,10 @@ import type {
   ReplyTone,
 } from '../../shared/types';
 import { getApiKey } from './key-store';
+import { buildSystemPrompt } from './prompts';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
-
-const BASE_PROMPT = `you are flicky, a friendly screen-aware ai companion that lives on the user's desktop.
-
-you can see the user's screen — reference specific things you see. if the user asks about something on screen, describe what you notice.
-
-TOOLS:
-you have access to web_search. use it when the user asks about something that needs fresh or current info (news, prices, docs, today's weather, recent releases, etc.). don't use it for things you already know confidently or for simple on-screen questions. when you do search, quietly incorporate the findings into your spoken answer — don't read out URLs.
-
-POINTING AT ELEMENTS:
-when you want to show the user something on screen, use the tag: [POINT:x,y:label:screenN]
-- x,y are pixel coordinates within the screenshot image (origin is top-left corner, x goes right, y goes down)
-- label is a short description of the element you're pointing at
-- screenN is which screenshot (screen0 = first image shown, which is the screen the cursor is on)
-- be precise: aim for the center of the UI element, button, or text you want to highlight
-- always point when showing the user where something is or telling them to click/interact with something
-
-never use markdown formatting. speak naturally like a friend.`;
-
-const TONE_STYLES: Record<ReplyTone, string> = {
-  concise:
-    'tone: all lowercase, direct, minimal. respond in 1 short sentence unless the user explicitly asks for more. no pleasantries.',
-  friendly:
-    'tone: all lowercase, casual, warm, concise. 1-2 sentences unless the user asks you to elaborate. never use abbreviations or lists.',
-  detailed:
-    'tone: lowercase, warm, and thorough. explain your reasoning briefly when it helps. up to 4 sentences; expand further if the user asks.',
-};
 
 /** Claude extended-thinking budget tokens for each depth setting. */
 const THINKING_BUDGETS: Record<ReasoningDepth, number> = {
@@ -69,7 +44,7 @@ export class ClaudeAPI {
       return;
     }
 
-    const systemPrompt = `${BASE_PROMPT}\n\n${TONE_STYLES[options.replyTone]}`;
+    const systemPrompt = buildSystemPrompt(options.replyTone, { hasWebSearch: true });
 
     const imageContent = screenshots.map((sc) => ({
       type: 'image' as const,

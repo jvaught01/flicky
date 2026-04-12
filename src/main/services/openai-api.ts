@@ -6,31 +6,9 @@ import type {
   ReplyTone,
 } from '../../shared/types';
 import { getApiKey } from './key-store';
+import { buildSystemPrompt } from './prompts';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
-
-const BASE_PROMPT = `you are flicky, a friendly screen-aware ai companion that lives on the user's desktop.
-
-you can see the user's screen — reference specific things you see. if the user asks about something on screen, describe what you notice.
-
-POINTING AT ELEMENTS:
-when you want to show the user something on screen, use the tag: [POINT:x,y:label:screenN]
-- x,y are pixel coordinates within the screenshot image (origin is top-left corner, x goes right, y goes down)
-- label is a short description of the element you're pointing at
-- screenN is which screenshot (screen0 = first image shown, which is the screen the cursor is on)
-- be precise: aim for the center of the UI element, button, or text you want to highlight
-- always point when showing the user where something is or telling them to click/interact with something
-
-never use markdown formatting. speak naturally like a friend.`;
-
-const TONE_STYLES: Record<ReplyTone, string> = {
-  concise:
-    'tone: all lowercase, direct, minimal. respond in 1 short sentence unless the user explicitly asks for more. no pleasantries.',
-  friendly:
-    'tone: all lowercase, casual, warm, concise. 1-2 sentences unless the user asks you to elaborate. never use abbreviations or lists.',
-  detailed:
-    'tone: lowercase, warm, and thorough. explain your reasoning briefly when it helps. up to 4 sentences; expand further if the user asks.',
-};
 
 /** OpenAI only applies `reasoning_effort` to its reasoning-capable models. */
 const REASONING_CAPABLE: Set<OpenAIModel> = new Set<OpenAIModel>(['gpt-5', 'gpt-5-mini']);
@@ -40,6 +18,15 @@ const DEPTH_TO_EFFORT: Record<ReasoningDepth, 'low' | 'medium' | 'high' | null> 
   medium: 'medium',
   deep: 'high',
 };
+
+/**
+ * Headroom so reasoning tokens don't starve the visible answer.
+ * Reasoning-capable models spend silent tokens on the chain-of-thought
+ * that count against max_completion_tokens along with output, so we
+ * give them more room.
+ */
+const COMPLETION_TOKENS_REASONING = 4096;
+const COMPLETION_TOKENS_STANDARD = 1024;
 
 export interface OpenAIStreamCallbacks {
   onChunk: (text: string) => void;
@@ -67,7 +54,9 @@ export class OpenAIAPI {
       return;
     }
 
-    const systemPrompt = `${BASE_PROMPT}\n\n${TONE_STYLES[options.replyTone]}`;
+    // OpenAI path has no server-side web_search wired yet, so don't
+    // claim the capability in the prompt.
+    const systemPrompt = buildSystemPrompt(options.replyTone, { hasWebSearch: false });
 
     const messages: Array<{ role: string; content: unknown }> = [
       { role: 'system', content: systemPrompt },
@@ -93,17 +82,23 @@ export class OpenAIAPI {
 
     messages.push({ role: 'user', content: userContent });
 
+    const effort = DEPTH_TO_EFFORT[options.reasoningDepth];
+    const usesReasoning = REASONING_CAPABLE.has(model) && effort !== null;
+
     const body: Record<string, unknown> = {
       model,
       messages,
       stream: true,
       stream_options: { include_usage: true },
       // Newer OpenAI models (GPT-5, o-series) require this instead of max_tokens.
-      max_completion_tokens: 1024,
+      // Reasoning models spend silent thinking tokens against this same budget,
+      // so bump it for them to avoid starving the visible answer.
+      max_completion_tokens: usesReasoning
+        ? COMPLETION_TOKENS_REASONING
+        : COMPLETION_TOKENS_STANDARD,
     };
 
-    const effort = DEPTH_TO_EFFORT[options.reasoningDepth];
-    if (effort && REASONING_CAPABLE.has(model)) {
+    if (usesReasoning && effort) {
       body.reasoning_effort = effort;
     }
 

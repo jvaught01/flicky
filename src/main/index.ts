@@ -4,6 +4,7 @@ import { CompanionManager } from './companion-manager';
 import { createPanelWindow, createOverlayWindow } from './windows';
 import { IPC } from '../shared/types';
 import { AUDIO_IPC } from './services/audio-capture';
+import * as chatHistory from './services/chat-history-store';
 
 // Prevent multiple instances
 const gotLock = app.requestSingleInstanceLock();
@@ -133,22 +134,30 @@ app.whenReady().then(() => {
   };
 
   function registerPttShortcut(accelerator: string): boolean {
+    const previous = currentShortcut;
     try {
-      if (currentShortcut) globalShortcut.unregister(currentShortcut);
+      if (previous) globalShortcut.unregister(previous);
       const ok = globalShortcut.register(accelerator, pttHandler);
       if (ok) {
         currentShortcut = accelerator;
         return true;
       }
-      // Failed — try to put the previous one back.
-      if (currentShortcut && currentShortcut !== accelerator) {
-        globalShortcut.register(currentShortcut, pttHandler);
-      }
-      return false;
     } catch (err) {
       console.error('[Flicky] shortcut register failed:', err);
-      return false;
     }
+    // Failure path: always try to restore the last-known-good binding so
+    // the user isn't left without any shortcut at all, even when the
+    // failing register call used the same accelerator as before.
+    if (previous) {
+      try {
+        globalShortcut.register(previous, pttHandler);
+        currentShortcut = previous;
+      } catch (err) {
+        console.error('[Flicky] shortcut rollback failed:', err);
+        currentShortcut = '';
+      }
+    }
+    return false;
   }
 
   registerPttShortcut(companion.getSettings().pushToTalkShortcut);
@@ -224,6 +233,8 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
+  // Drain any pending chat-history writes before exit.
+  chatHistory.flushSync();
 });
 
 // macOS: don't quit when all windows are closed (tray app)

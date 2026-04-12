@@ -143,11 +143,9 @@ export function OverlayApp() {
   }, [cursorPos, cursorMode, setCompanionPosSync]);
 
   useEffect(() => {
-    const handleDisplayInfo = (_e: Event, info: { id: number; bounds: { x: number; y: number; width: number; height: number } }) => {
-      displayRef.current = info;
-    };
-    // @ts-expect-error — electron IPC on window
-    window.electronAPI?.onDisplayInfo?.(handleDisplayInfo);
+    const unsubDisplayInfo = window.flicky.onDisplayInfo((info) => {
+      displayRef.current = { id: info.id, bounds: info.bounds };
+    });
 
     const unsubs = [
       window.flicky.onVoiceStateChanged(setVoiceState),
@@ -198,6 +196,7 @@ export function OverlayApp() {
     ];
 
     return () => {
+      unsubDisplayInfo();
       unsubs.forEach((u) => u());
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
       if (returnAnimRef.current) cancelAnimationFrame(returnAnimRef.current);

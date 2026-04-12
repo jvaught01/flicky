@@ -118,9 +118,9 @@ export class ContextManager {
 
     try {
       const summary = await this.summarizeViaActiveProvider(prompt);
-      this.summary = this.summary
-        ? `${this.summary}\n\n${summary}`.trim()
-        : summary;
+      // The prompt already folds the prior summary in, so the model's
+      // output IS the new unified running summary — replace, don't append.
+      this.summary = summary;
       this.summaryTokens = approxTokens(this.summary);
       this.summarizedCount += olderTurns.length;
       this.turns = recentTurns;
@@ -164,6 +164,7 @@ export class ContextManager {
   }
 
   private async summarizeViaClaude(prompt: string, apiKey: string): Promise<string> {
+    const model = settingsStore.get('selectedModel');
     const response = await fetch(ANTHROPIC_API_URL, {
       method: 'POST',
       headers: {
@@ -172,7 +173,7 @@ export class ContextManager {
         'anthropic-version': ANTHROPIC_VERSION,
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model,
         max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }],
       }),

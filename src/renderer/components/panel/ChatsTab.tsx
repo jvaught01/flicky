@@ -29,7 +29,10 @@ export function ChatsTab() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    window.flicky.getChatHistory().then(setEntries);
+    window.flicky
+      .getChatHistory()
+      .then(setEntries)
+      .catch((err) => console.error('[Flicky] load chat history failed:', err));
 
     const unsubs = [
       window.flicky.onChatEntryAdded((entry) => {
@@ -43,8 +46,15 @@ export function ChatsTab() {
       window.flicky.onAiResponseChunk((chunk) => {
         setStreamingAssistant((prev) => prev + chunk);
       }),
-      window.flicky.onAiResponseComplete(() => {
-        // final entry arrives via onChatEntryAdded; clear streaming state
+      // Wipe any orphan streaming state when a session ends without
+      // producing an entry (e.g., transcription returned empty or
+      // the LLM call errored). A fresh session landing on 'listening'
+      // clears the previous turn's scaffolding.
+      window.flicky.onVoiceStateChanged((state) => {
+        if (state === 'listening') {
+          setStreamingUser(null);
+          setStreamingAssistant('');
+        }
       }),
     ];
     return () => unsubs.forEach((u) => u());

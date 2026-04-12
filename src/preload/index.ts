@@ -129,6 +129,26 @@ const api = {
   },
 
   // ── Audio Capture (overlay ↔ main) ──────────────────────────────────
+  // ── Overlay / display info ────────────────────────────────────────
+  onDisplayInfo: (
+    cb: (info: {
+      id: number;
+      bounds: { x: number; y: number; width: number; height: number };
+      scaleFactor: number;
+    }) => void,
+  ) => {
+    const handler = (
+      _e: Electron.IpcRendererEvent,
+      info: {
+        id: number;
+        bounds: { x: number; y: number; width: number; height: number };
+        scaleFactor: number;
+      },
+    ) => cb(info);
+    ipcRenderer.on('display-info', handler);
+    return () => ipcRenderer.removeListener('display-info', handler);
+  },
+
   onStartCapture: (cb: () => void) => {
     const handler = () => cb();
     ipcRenderer.on('start-audio-capture', handler);
