@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { VoiceState, DetectedElement } from '../../shared/types';
-import { Waveform as SharedWaveform } from './Waveform';
+import { RecordingStatusWidget } from './RecordingStatusWidget';
 
 const POINTING_PHRASES = [
   'right here!',
@@ -27,6 +27,8 @@ export function OverlayApp() {
   const [cursorMode, setCursorMode] = useState<CursorMode>('following');
   const [companionPos, setCompanionPos] = useState({ x: 0, y: 0 });
   const [isCursorOnThisDisplay, setIsCursorOnThisDisplay] = useState(false);
+  const [audioLevels, setAudioLevels] = useState<number[]>([]);
+  const levelsBufferRef = useRef<number[]>([]);
   const displayRef = useRef<{ id: number; bounds: { x: number; y: number; width: number; height: number } } | null>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const returnAnimRef = useRef<number | null>(null);
@@ -56,11 +58,21 @@ export function OverlayApp() {
         processor.onaudioprocess = (e) => {
           const float32 = e.inputBuffer.getChannelData(0);
           const pcm16 = new Int16Array(float32.length);
+          let sumSq = 0;
           for (let i = 0; i < float32.length; i++) {
             const s = Math.max(-1, Math.min(1, float32[i]));
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+            sumSq += s * s;
           }
           window.flicky.sendAudioChunk(pcm16.buffer);
+
+          // RMS → rolling level buffer for the recording widget.
+          const rms = Math.sqrt(sumSq / float32.length);
+          const level = Math.min(1, rms * 2.5);
+          const buf = levelsBufferRef.current;
+          buf.push(level);
+          if (buf.length > 10) buf.shift();
+          setAudioLevels([...buf]);
         };
 
         source.connect(processor);
@@ -216,6 +228,9 @@ export function OverlayApp() {
         returnAnimRef.current = null;
       }
       setCursorModeSync('following');
+    } else if (voiceState === 'idle') {
+      levelsBufferRef.current = [];
+      setAudioLevels([]);
     }
   }, [voiceState, setCursorModeSync]);
 
@@ -293,20 +308,16 @@ export function OverlayApp() {
             </svg>
           </div>
 
-          {voiceState === 'listening' && (
+          {(voiceState === 'listening' || voiceState === 'processing') && (
             <div
-              className="overlay-waveform"
-              style={{ left: companionPos.x + 44, top: companionPos.y + 2 }}
+              className="overlay-recorder"
+              style={{ left: companionPos.x + 44, top: companionPos.y - 4 }}
             >
-              <SharedWaveform state="listening" bars={12} height={26} />
+              <RecordingStatusWidget
+                phase={voiceState === 'listening' ? 'recording' : 'processing'}
+                levels={audioLevels}
+              />
             </div>
-          )}
-
-          {voiceState === 'processing' && (
-            <div
-              className="processing-spinner"
-              style={{ left: companionPos.x + 44, top: companionPos.y + 6 }}
-            />
           )}
 
           {(isNavigating || isHolding) && pointingPhrase && (

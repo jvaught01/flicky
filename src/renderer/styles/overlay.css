@@ -32,11 +32,99 @@
   transform: scale(1.25);
 }
 
-/* ── Waveform Visualizer (positions the shared <Waveform>) ─────────── */
+/* ── Recording Status Widget (pill near cursor) ─────────────────────── */
 
-.overlay-waveform {
+.overlay-recorder {
   position: absolute;
-  padding: 0 var(--space-sm);
+  pointer-events: none;
+}
+
+.rec-pill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 16px;
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.36);
+  min-width: 128px;
+  height: 32px;
+  overflow: hidden;
+}
+
+.rec-inner {
+  position: relative;
+  width: 128px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rec-idle-label {
+  position: absolute;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  font-family: 'Geist', system-ui, sans-serif;
+  transition: opacity 150ms ease-out;
+}
+
+.rec-processing-layer {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 150ms ease-out;
+}
+
+.rec-progress {
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.rec-progress-bar {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 40%;
+  background: #fff;
+  border-radius: 999px;
+  animation: recProgressSlide 1.4s ease-in-out infinite;
+}
+
+@keyframes recProgressSlide {
+  0%   { left: -40%; }
+  100% { left: 100%; }
+}
+
+.rec-waveform-layer {
+  position: absolute;
+  inset: 0;
+  transition: opacity 150ms ease-out;
+}
+
+.rec-edge-fade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease-out;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.9) 0%,
+    transparent 18%,
+    transparent 85%,
+    rgba(0, 0, 0, 0.9) 100%
+  );
 }
 
 /* ── Spinner ────────────────────────────────────────────────────────── */
