@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { VoiceState, FlickySettings, ClaudeModel, GroqTranscriptionModel, ApiKeyName } from '../../shared/types';
-import { ELEVENLABS_VOICES } from '../../shared/types';
+import { VOICES } from '../../shared/voices';
 
 const STATUS_LABELS: Record<VoiceState, string> = {
   idle: 'Ready',
@@ -126,7 +126,7 @@ export function PanelApp() {
               value={settings.selectedVoiceId}
               onChange={(e) => window.flicky.setVoice(e.target.value)}
             >
-              {ELEVENLABS_VOICES.map((v) => (
+              {VOICES.map((v) => (
                 <option key={v.voiceId} value={v.voiceId}>
                   {v.name}
                 </option>
