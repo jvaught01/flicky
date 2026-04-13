@@ -1,20 +1,20 @@
 /**
- * CompanionCursor — Canvas-rendered classic pointer cursor.
+ * CompanionCursor — Mercury Crystal Arrow
  *
- * Replaces the Mercury Surface orb with a precision arrow-pointer cursor.
- * The cursor tip aligns exactly with the tracked mouse position.
+ * Shape: isosceles arrowhead — sharp apex, two equal sides, concave curved back.
+ *        3-point path: tip → back-left → (quadratic bezier, inward) → back-right → closePath.
+ *        No tail. No notch protrusion. Clean pointer silhouette.
  *
- * Visual design:
- *   - Classic OS arrow-pointer shape (Path2D, no bitmaps)
- *   - Black fill with semi-transparent white outline stroke
- *   - Mercury-palette state glow (shadowBlur) — audio-reactive intensity
- *   - Scale pulse on navigate / hold transitions
+ * Holographic crystal coloring: vivid teal dominant (state-aware) + magenta-pink
+ * accent on the lower face. Animated shimmer sweep + audio-reactive glow.
+ * Color separation from gradients only — no visible dividing lines.
  *
- * Mercury glow per state:
- *   idle        — Parker teal    (#90C2D1)   slow breath
- *   listening   — Delicate Gold  (#FAE5B4)   warm, alert
- *   processing  — Caramel        (#ECB371)   amber, deliberate
- *   responding  — Parker teal    (#90C2D1)   expressive, flowing
+ * Rendering pipeline:
+ *   Pass 1 — drop shadow
+ *   Pass 2 — clipped crystal body (base → teal → pink → shimmer → tip glow)
+ *   Pass 3 — outline (teal rim + white edge, no shadowBlur)
+ *   Pass 4 — ambient Mercury halo
+ *   Pass 5 — tight crystal glow
  */
 
 import { useRef, useEffect } from 'react';
@@ -22,29 +22,30 @@ import type { VoiceState } from '../../shared/types';
 
 // ── Canvas constants ──────────────────────────────────────────────────────────
 
-const CURSOR_SIZE = 48;   // CSS px — square canvas (includes glow headroom)
+const CURSOR_SIZE = 56;
+const TIP_X      = 10;
+const TIP_Y      = 10;
 
-// Cursor tip sits at (TIP_X, TIP_Y) within the canvas.
-// The element transform `translate(-TIP_X, -TIP_Y)` aligns the tip with the
-// anchor div's position, which tracks the real mouse position.
-const TIP_X = 8;
-const TIP_Y = 8;
-const S     = 1.10;  // path scale — cursor body spans ~18×26 CSS px
-
-// ── Mercury palette ───────────────────────────────────────────────────────────
+// ── Color definitions ─────────────────────────────────────────────────────────
 
 type RGB = [number, number, number];
 
-const PARKER:  RGB = [144, 194, 209];  // #90C2D1
-const CARAMEL: RGB = [236, 179, 113];  // #ECB371
-const GOLD:    RGB = [250, 229, 180];  // #FAE5B4
+const ROSE:  RGB = [218,  60, 148];
+const WHITE: RGB = [255, 255, 255];
+const BASE:  RGB = [  3,   2,  12];
 
-// Per-state glow colour
+const STATE_VIVID: Record<VoiceState, RGB> = {
+  idle:       [ 55, 198, 185],
+  listening:  [240, 210,  70],
+  processing: [245, 148,  55],
+  responding: [ 55, 198, 185],
+};
+
 const STATE_GLOW: Record<VoiceState, RGB> = {
-  idle:       PARKER,
-  listening:  GOLD,
-  processing: CARAMEL,
-  responding: PARKER,
+  idle:       [144, 194, 209],
+  listening:  [250, 229, 180],
+  processing: [236, 179, 113],
+  responding: [144, 194, 209],
 };
 
 function lerp3(a: RGB, b: RGB, t: number): RGB {
@@ -77,6 +78,35 @@ function getBass(buf: Uint8Array): number {
   return s / (hi * 255);
 }
 
+// ── Arrow path — isosceles arrowhead with concave curved back ─────────────────
+//
+//  tip(10,10)
+//    |\
+//    | \  ← right side (closePath straight line)
+//    |  \
+//    |   back-right(48,14)
+//    |  ↗          (quadratic bezier — inward control at (25,25))
+//    | ↗  ← concave curved back
+//    |↗
+//  back-left(12,48)
+//
+//  Both sides ≈ 38px — isosceles.
+//  Control point (25,25) is pulled toward the tip → concave back curve.
+//  Bezier tangency at back-left and back-right softens those corners naturally.
+//
+function buildArrowPath(): Path2D {
+  const p = new Path2D();
+  const tx = TIP_X, ty = TIP_Y;
+  p.moveTo(tx,      ty      );   // tip — sharp apex
+  p.lineTo(tx +  2, ty + 38 );   // back-left  (12, 48)
+  p.quadraticCurveTo(
+    tx + 15, ty + 15,             // control — inward toward tip axis (25, 25)
+    tx + 38, ty +  4,             // back-right (48, 14)
+  );
+  p.closePath();                   // straight right side back to tip
+  return p;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -94,20 +124,23 @@ export function CompanionOrb({ voiceState, isNavigating, isHolding, analyser }: 
     isNavigating,
     isHolding,
     analyser,
-    glow:    [...STATE_GLOW.idle]    as RGB,
-    tgtGlow: [...STATE_GLOW.idle]    as RGB,
-    glowT:   1,
-    time:    0,
+    vivid:    [...STATE_VIVID.idle] as RGB,
+    tgtVivid: [...STATE_VIVID.idle] as RGB,
+    glow:     [...STATE_GLOW.idle]  as RGB,
+    tgtGlow:  [...STATE_GLOW.idle]  as RGB,
+    glowT:    1,
+    time:     0,
   });
 
-  // Snapshot mid-transition glow colour on state change
   useEffect(() => {
     const s = state.current;
     const t = Math.min(s.glowT, 1);
-    s.glow    = lerp3(s.glow, s.tgtGlow, t);
-    s.tgtGlow = [...STATE_GLOW[voiceState]];
+    s.vivid    = lerp3(s.vivid, s.tgtVivid, t);
+    s.glow     = lerp3(s.glow,  s.tgtGlow,  t);
+    s.tgtVivid = [...STATE_VIVID[voiceState]];
+    s.tgtGlow  = [...STATE_GLOW[voiceState]];
     s.voiceState = voiceState;
-    s.glowT   = 0;
+    s.glowT    = 0;
   }, [voiceState]);
 
   useEffect(() => { state.current.isNavigating = isNavigating; }, [isNavigating]);
@@ -124,25 +157,7 @@ export function CompanionOrb({ voiceState, isNavigating, isHolding, analyser }: 
     const ctx = canvas.getContext('2d')!;
     ctx.scale(dpr, dpr);
 
-    // ── Arrow-pointer path (built once, reused every frame) ────────────────
-    // Classic OS cursor shape: tip at (TIP_X, TIP_Y), body scaled by S.
-    //
-    //   Tip ──────────────── upper-right edge
-    //   │                    /
-    //   left edge           /
-    //   │         inner-right notch
-    //   │        /
-    //   notch ──── tail bottom ── tail right
-    //
-    const p = new Path2D();
-    p.moveTo(TIP_X,            TIP_Y           );   // tip
-    p.lineTo(TIP_X,            TIP_Y + 20 * S  );   // left edge bottom
-    p.lineTo(TIP_X +  5 * S,   TIP_Y + 15 * S  );   // inner notch
-    p.lineTo(TIP_X + 12 * S,   TIP_Y + 23 * S  );   // tail bottom
-    p.lineTo(TIP_X + 15 * S,   TIP_Y + 20 * S  );   // tail right
-    p.lineTo(TIP_X +  8 * S,   TIP_Y + 13 * S  );   // inner right notch
-    p.lineTo(TIP_X + 16 * S,   TIP_Y +  2 * S  );   // upper right edge
-    p.closePath();
+    const arrowPath = buildArrowPath();
 
     const buf = new Uint8Array(256);
     let raf   = 0;
@@ -151,28 +166,28 @@ export function CompanionOrb({ voiceState, isNavigating, isHolding, analyser }: 
       raf = requestAnimationFrame(frame);
       const s = state.current;
 
-      // ── Audio ────────────────────────────────────────────────────────────
-      const overall = getOverall(s.analyser, buf);
+      const overall    = getOverall(s.analyser, buf);
       const audioActive = overall > 0.015;
-      const breathe = Math.sin(s.time * 0.42) * 0.5 + 0.5;
-      const eBass   = audioActive ? getBass(buf) : breathe * 0.10;
+      const breathe    = Math.sin(s.time * 0.42) * 0.5 + 0.5;
+      const eBass      = audioActive ? getBass(buf) : breathe * 0.06;
 
-      // ── Time ─────────────────────────────────────────────────────────────
-      const baseSpeed = s.voiceState === 'idle' ? 0.012
-                      : s.voiceState === 'processing' ? 0.022
-                      : 0.016;
-      s.time += baseSpeed;
+      const speed = s.voiceState === 'idle'       ? 0.010
+                  : s.voiceState === 'processing' ? 0.022
+                  : 0.015;
+      s.time += speed;
 
-      // ── Glow colour crossfade ─────────────────────────────────────────────
       s.glowT = Math.min(s.glowT + 0.04, 1);
-      const glowColor = lerp3(s.glow, s.tgtGlow, s.glowT);
-      if (s.glowT >= 1) s.glow = [...s.tgtGlow] as RGB;
+      const vividColor = lerp3(s.vivid, s.tgtVivid, s.glowT);
+      const glowColor  = lerp3(s.glow,  s.tgtGlow,  s.glowT);
+      if (s.glowT >= 1) {
+        s.vivid = [...s.tgtVivid] as RGB;
+        s.glow  = [...s.tgtGlow]  as RGB;
+      }
 
-      // ── Scale on navigate/hold ────────────────────────────────────────────
       const scale = s.isNavigating ? 1.12 : s.isHolding ? 1.06 : 1.0;
 
       ctx.clearRect(0, 0, CURSOR_SIZE, CURSOR_SIZE);
-      ctx.save();
+      ctx.save();  // A
 
       if (scale !== 1) {
         ctx.translate(TIP_X, TIP_Y);
@@ -180,25 +195,103 @@ export function CompanionOrb({ voiceState, isNavigating, isHolding, analyser }: 
         ctx.translate(-TIP_X, -TIP_Y);
       }
 
-      // ── Glow pass — state-coloured Mercury shadow ─────────────────────────
-      const glowAlpha = 0.50 + eBass * 0.38 + breathe * 0.07;
-      const glowBlur  = (8 + eBass * 14 + breathe * 3) * dpr;
+      // ── PASS 1: Drop shadow ───────────────────────────────────────────
+      ctx.save();
+      ctx.shadowColor   = 'rgba(0,0,0,0.75)';
+      ctx.shadowBlur    = 8 * dpr;
+      ctx.shadowOffsetX = 2 * dpr;
+      ctx.shadowOffsetY = 3 * dpr;
+      ctx.fillStyle     = 'rgba(0,0,0,0.01)';
+      ctx.fill(arrowPath);
+      ctx.restore();
+
+      // ── PASS 2: Clipped crystal body ──────────────────────────────────
+      ctx.save();
+      ctx.clip(arrowPath);
+
+      // Dark base
+      ctx.fillStyle = rgba(BASE, 1);
+      ctx.fillRect(0, 0, CURSOR_SIZE, CURSOR_SIZE);
+
+      // Teal face — radiates from back-right vertex (the lit face)
+      const ufGrad = ctx.createRadialGradient(
+        TIP_X + 38, TIP_Y + 4, 0,
+        TIP_X + 38, TIP_Y + 4, 46,
+      );
+      ufGrad.addColorStop(0,    rgba(vividColor, 0.95));
+      ufGrad.addColorStop(0.20, rgba(vividColor, 0.80));
+      ufGrad.addColorStop(0.55, rgba(vividColor, 0.42));
+      ufGrad.addColorStop(0.85, rgba(vividColor, 0.10));
+      ufGrad.addColorStop(1,    rgba(vividColor, 0));
+      ctx.fillStyle = ufGrad;
+      ctx.fillRect(0, 0, CURSOR_SIZE, CURSOR_SIZE);
+
+      // Pink face — radiates from back-left vertex (the shadow face)
+      const lfGrad = ctx.createRadialGradient(
+        TIP_X + 2, TIP_Y + 38, 0,
+        TIP_X + 2, TIP_Y + 38, 36,
+      );
+      lfGrad.addColorStop(0,    rgba(ROSE, 0.88 + eBass * 0.10));
+      lfGrad.addColorStop(0.30, rgba(ROSE, 0.55));
+      lfGrad.addColorStop(0.65, rgba(ROSE, 0.22));
+      lfGrad.addColorStop(1,    rgba(ROSE, 0));
+      ctx.fillStyle = lfGrad;
+      ctx.fillRect(0, 0, CURSOR_SIZE, CURSOR_SIZE);
+
+      // Holographic shimmer sweep
+      const sweepT   = Math.sin(s.time * 0.55) * 0.5 + 0.5;
+      const sweepX0  = TIP_X - 8 + sweepT * 46;
+      const shimCol  = lerp3(vividColor, WHITE, 0.60);
+      const shimGrad = ctx.createLinearGradient(sweepX0, TIP_Y, sweepX0 + 18, TIP_Y + 42);
+      shimGrad.addColorStop(0,   rgba(shimCol, 0));
+      shimGrad.addColorStop(0.5, rgba(shimCol, 0.34 + eBass * 0.20 + breathe * 0.05));
+      shimGrad.addColorStop(1,   rgba(shimCol, 0));
+      ctx.fillStyle = shimGrad;
+      ctx.fillRect(0, 0, CURSOR_SIZE, CURSOR_SIZE);
+
+      // Tip hot-point
+      const tipR    = 5 + eBass * 6 + breathe * 2;
+      const tipGrad = ctx.createRadialGradient(TIP_X + 1, TIP_Y + 1, 0, TIP_X + 1, TIP_Y + 1, tipR);
+      tipGrad.addColorStop(0,   rgba(WHITE,      0.95));
+      tipGrad.addColorStop(0.3, rgba(vividColor, 0.65));
+      tipGrad.addColorStop(1,   rgba(vividColor, 0));
+      ctx.fillStyle = tipGrad;
+      ctx.fillRect(0, 0, CURSOR_SIZE, CURSOR_SIZE);
+
+      ctx.restore();  // end clip
+
+      // ── PASS 3: Outline (no shadowBlur) ──────────────────────────────
+      ctx.save();
+      ctx.lineWidth   = 2.5;
+      ctx.strokeStyle = rgba(vividColor, 0.72 + eBass * 0.18 + breathe * 0.06);
+      ctx.lineJoin    = 'round';
+      ctx.stroke(arrowPath);
+      ctx.restore();
 
       ctx.save();
-      ctx.shadowColor = rgba(glowColor, glowAlpha);
-      ctx.shadowBlur  = glowBlur;
-      ctx.lineWidth   = 7 * dpr;
-      ctx.strokeStyle = 'rgba(255,255,255,0.92)';
-      ctx.stroke(p);
+      ctx.lineWidth   = 1.1;
+      ctx.strokeStyle = rgba(WHITE, 0.84 + eBass * 0.12);
+      ctx.lineJoin    = 'round';
+      ctx.stroke(arrowPath);
       ctx.restore();
 
-      // ── Black fill — on top of stroke, no shadow needed ───────────────────
-      // Filling after stroking leaves only the outer half of the stroke
-      // visible as a white outline — exactly matching the reference design.
-      ctx.fillStyle = '#0B0B0B';
-      ctx.fill(p);
-
+      // ── PASS 4: Ambient Mercury glow ─────────────────────────────────
+      ctx.save();
+      ctx.shadowColor = rgba(glowColor, 0.22 + eBass * 0.14 + breathe * 0.06);
+      ctx.shadowBlur  = (12 + eBass * 12 + breathe * 4) * dpr;
+      ctx.fillStyle   = rgba(glowColor, 0.01);
+      ctx.fill(arrowPath);
       ctx.restore();
+
+      // ── PASS 5: Tight crystal glow ────────────────────────────────────
+      ctx.save();
+      ctx.shadowColor = rgba(vividColor, 0.68 + eBass * 0.22 + breathe * 0.08);
+      ctx.shadowBlur  = (4 + eBass * 7 + breathe * 2) * dpr;
+      ctx.fillStyle   = rgba(vividColor, 0.01);
+      ctx.fill(arrowPath);
+      ctx.restore();
+
+      ctx.restore();  // A
     }
 
     frame();
@@ -211,8 +304,6 @@ export function CompanionOrb({ voiceState, isNavigating, isHolding, analyser }: 
       style={{
         width:         CURSOR_SIZE,
         height:        CURSOR_SIZE,
-        // Shift the canvas so the tip at (TIP_X, TIP_Y) aligns exactly
-        // with the anchor div's position (the tracked cursor coordinate).
         transform:     `translate(-${TIP_X}px, -${TIP_Y}px)`,
         pointerEvents: 'none',
         display:       'block',

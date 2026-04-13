@@ -48,13 +48,25 @@ export function OverlayApp() {
   const scriptNodeRef  = useRef<ScriptProcessorNode | null>(null);
   const audioCtxRef    = useRef<AudioContext | null>(null);
   const analyserRef    = useRef<AnalyserNode | null>(null);
+  // Tracks whether stopMic was called while getUserMedia was still pending.
+  // Without this, a stop that arrives before the async setup completes is a
+  // no-op, leaving the stream live indefinitely.
+  const micStoppedRef  = useRef(false);
 
   useEffect(() => {
     const startMic = async () => {
+      micStoppedRef.current = false;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true },
         });
+
+        // If stopMic fired while getUserMedia was pending, tear down immediately.
+        if (micStoppedRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
         mediaStreamRef.current = stream;
 
         const ctx = new AudioContext({ sampleRate: 16000 });
@@ -91,6 +103,7 @@ export function OverlayApp() {
     };
 
     const stopMic = () => {
+      micStoppedRef.current = true;  // signal any in-flight getUserMedia
       scriptNodeRef.current?.disconnect();
       scriptNodeRef.current = null;
       analyserRef.current = null;
@@ -325,11 +338,11 @@ export function OverlayApp() {
             />
           </div>
 
-          {/* Speech bubble — sits to the right of the pointer cursor body (~38px) */}
+          {/* Speech bubble — sits to the right of the cursor body (~54px wide arrow) */}
           {responseText && (
             <div
               className="speech-bubble"
-              style={{ left: companionPos.x + 38, top: companionPos.y - 10 }}
+              style={{ left: companionPos.x + 54, top: companionPos.y - 10 }}
             >
               {responseText}
             </div>
@@ -340,7 +353,7 @@ export function OverlayApp() {
             <div
               className="pointing-bubble"
               style={{
-                left: companionPos.x + 38,
+                left: companionPos.x + 54,
                 top: companionPos.y - 10,
               }}
             >
