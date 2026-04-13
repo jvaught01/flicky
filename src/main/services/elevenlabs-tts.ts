@@ -2,30 +2,26 @@ import { getApiKey } from './key-store';
 
 const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
 
+export interface TtsOptions {
+  voiceId: string;
+  /** 0.7–1.2 */
+  speed: number;
+  /** 0–1 */
+  stability: number;
+}
+
 /**
  * ElevenLabs Text-to-Speech client.
- *
- * Calls the ElevenLabs API directly using the locally stored API key.
- * Keys are encrypted at rest via Electron safeStorage and never leave the machine.
+ * Keys are stored locally via Electron safeStorage.
  */
 export class ElevenLabsTTS {
-  private voiceId: string;
-
-  constructor(voiceId = 'pMsXgVXv3BLzUgSXRplE') {
-    this.voiceId = voiceId;
-  }
-
-  setVoiceId(id: string): void {
-    this.voiceId = id;
-  }
-
-  async synthesize(text: string): Promise<Buffer> {
+  async synthesize(text: string, options: TtsOptions): Promise<Buffer> {
     const apiKey = getApiKey('elevenlabs');
     if (!apiKey) {
       throw new Error('ElevenLabs API key not configured. Add it in the Flicky panel.');
     }
 
-    const response = await fetch(`${ELEVENLABS_API_URL}/${this.voiceId}`, {
+    const response = await fetch(`${ELEVENLABS_API_URL}/${options.voiceId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -35,8 +31,9 @@ export class ElevenLabsTTS {
         text,
         model_id: 'eleven_flash_v2_5',
         voice_settings: {
-          stability: 0.5,
+          stability: clamp(options.stability, 0, 1),
           similarity_boost: 0.75,
+          speed: clamp(options.speed, 0.7, 1.2),
         },
       }),
     });
@@ -49,4 +46,8 @@ export class ElevenLabsTTS {
     const arrayBuf = await response.arrayBuffer();
     return Buffer.from(arrayBuf);
   }
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
 }

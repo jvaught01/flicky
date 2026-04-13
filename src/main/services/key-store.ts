@@ -2,6 +2,7 @@ import { safeStorage } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import { writeFileAtomic } from './fs-util';
 
 /**
  * Secure API key storage using Electron's safeStorage API.
@@ -16,7 +17,7 @@ import { app } from 'electron';
  * ciphertext that can only be decrypted by the current OS user.
  */
 
-const KEY_NAMES = ['anthropic', 'elevenlabs', 'groq'] as const;
+const KEY_NAMES = ['anthropic', 'openai', 'elevenlabs', 'groq'] as const;
 export type ApiKeyName = (typeof KEY_NAMES)[number];
 
 interface KeyFile {
@@ -37,7 +38,7 @@ function readKeyFile(): KeyFile {
 }
 
 function writeKeyFile(data: KeyFile): void {
-  fs.writeFileSync(getKeyFilePath(), JSON.stringify(data, null, 2), 'utf-8');
+  writeFileAtomic(getKeyFilePath(), JSON.stringify(data, null, 2));
 }
 
 export function isEncryptionAvailable(): boolean {
@@ -85,6 +86,7 @@ export function deleteApiKey(name: ApiKeyName): void {
 export function getKeyStatus(): Record<ApiKeyName, boolean> {
   return {
     anthropic: hasApiKey('anthropic'),
+    openai: hasApiKey('openai'),
     elevenlabs: hasApiKey('elevenlabs'),
     groq: hasApiKey('groq'),
   };

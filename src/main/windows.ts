@@ -19,22 +19,25 @@ function loadPage(win: BrowserWindow, page: string): void {
   }
 }
 
-/** The menu-bar settings / status panel. */
+/** The main Flicky app window (settings + status). */
 export function createPanelWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 340,
-    height: 520,
+    width: 960,
+    height: 640,
+    minWidth: 820,
+    minHeight: 560,
     show: false,
-    frame: false,
-    resizable: false,
+    frame: true,
+    titleBarStyle: 'default',
+    resizable: true,
     movable: true,
-    minimizable: false,
-    maximizable: false,
+    minimizable: true,
+    maximizable: true,
     fullscreenable: false,
-    skipTaskbar: true,
+    skipTaskbar: false,
     transparent: false,
-    backgroundColor: '#1a1a2e',
-    alwaysOnTop: true,
+    backgroundColor: '#0f0f11',
+    title: 'Flicky',
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,

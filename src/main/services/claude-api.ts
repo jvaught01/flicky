@@ -1,29 +1,34 @@
-import type { ConversationTurn, ScreenCapture, ClaudeModel } from '../../shared/types';
+import type {
+  ConversationTurn,
+  ScreenCapture,
+  ClaudeModel,
+  ReasoningDepth,
+  ReplyTone,
+} from '../../shared/types';
 import { getApiKey } from './key-store';
+import { buildSystemPrompt } from './prompts';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 
-const SYSTEM_PROMPT = `you are flicky, a friendly screen-aware ai companion that lives on the user's desktop.
-
-tone: all lowercase, casual, warm, concise. 1-2 sentences unless the user asks you to elaborate.
-
-you can see the user's screen — reference specific things you see. if the user asks about something on screen, describe what you notice.
-
-POINTING AT ELEMENTS:
-when you want to show the user something on screen, use the tag: [POINT:x,y:label:screenN]
-- x,y are pixel coordinates within the screenshot image (origin is top-left corner, x goes right, y goes down)
-- label is a short description of the element you're pointing at
-- screenN is which screenshot (screen0 = first image shown, which is the screen the cursor is on)
-- be precise: aim for the center of the UI element, button, or text you want to highlight
-- always point when showing the user where something is or telling them to click/interact with something
-
-never use abbreviations, lists, or markdown formatting. speak naturally like a friend.`;
+/** Claude extended-thinking budget tokens for each depth setting. */
+const THINKING_BUDGETS: Record<ReasoningDepth, number> = {
+  off: 0,
+  medium: 4000,
+  deep: 16000,
+};
 
 export interface ClaudeStreamCallbacks {
   onChunk: (text: string) => void;
-  onComplete: (fullText: string) => void;
+  onComplete: (fullText: string, usage?: { inputTokens: number; outputTokens: number }) => void;
   onError: (error: Error) => void;
+}
+
+export interface ClaudeChatOptions {
+  reasoningDepth: ReasoningDepth;
+  replyTone: ReplyTone;
+  /** Aborting mid-stream is treated as a graceful interrupt, not an error. */
+  signal?: AbortSignal;
 }
 
 export class ClaudeAPI {
@@ -32,6 +37,7 @@ export class ClaudeAPI {
     screenshots: ScreenCapture[],
     history: ConversationTurn[],
     model: ClaudeModel,
+    options: ClaudeChatOptions,
     callbacks: ClaudeStreamCallbacks,
   ): Promise<void> {
     const apiKey = getApiKey('anthropic');
@@ -40,7 +46,8 @@ export class ClaudeAPI {
       return;
     }
 
-    // Build message content: images first, then prompt
+    const systemPrompt = buildSystemPrompt(options.replyTone, { hasWebSearch: true });
+
     const imageContent = screenshots.map((sc) => ({
       type: 'image' as const,
       source: {
@@ -55,32 +62,46 @@ export class ClaudeAPI {
       text: `[screen${i}] image is ${sc.imageWidth}x${sc.imageHeight} pixels. top-left is (0,0), bottom-right is (${sc.imageWidth},${sc.imageHeight}). use these pixel coordinates for POINT tags.${sc.isCursorScreen ? ' (this is the active screen — user cursor is here)' : ''}`,
     }));
 
-    // Interleave labels with images
     const mediaContent: Array<Record<string, unknown>> = [];
     for (let i = 0; i < screenshots.length; i++) {
       mediaContent.push(imageLabels[i]);
       mediaContent.push(imageContent[i]);
     }
 
-    // Build messages array with history
     const messages: Array<{ role: string; content: unknown }> = [];
     for (const turn of history) {
       messages.push({ role: turn.role, content: turn.content });
     }
-
-    // Current user message with screenshots + prompt
     messages.push({
       role: 'user',
       content: [...mediaContent, { type: 'text', text: prompt }],
     });
 
-    const body = JSON.stringify({
+    const thinkingBudget = THINKING_BUDGETS[options.reasoningDepth];
+    const requestBody: Record<string, unknown> = {
       model,
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
+      max_tokens: thinkingBudget > 0 ? thinkingBudget + 1024 : 1024,
+      system: systemPrompt,
       messages,
       stream: true,
-    });
+      // Let Flicky reach the web when it needs fresh info. Server-side
+      // tool — Claude decides when to search and we just stream the
+      // final answer.
+      tools: [
+        {
+          type: 'web_search_20250305',
+          name: 'web_search',
+          max_uses: 3,
+        },
+      ],
+    };
+
+    if (thinkingBudget > 0) {
+      requestBody.thinking = {
+        type: 'enabled',
+        budget_tokens: thinkingBudget,
+      };
+    }
 
     try {
       const response = await fetch(ANTHROPIC_API_URL, {
@@ -89,8 +110,10 @@ export class ClaudeAPI {
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
           'anthropic-version': ANTHROPIC_VERSION,
+          'anthropic-beta': 'web-search-2025-03-05',
         },
-        body,
+        body: JSON.stringify(requestBody),
+        signal: options.signal,
       });
 
       if (!response.ok) {
@@ -104,6 +127,8 @@ export class ClaudeAPI {
       const decoder = new TextDecoder();
       let fullText = '';
       let buffer = '';
+      let inputTokens = 0;
+      let outputTokens = 0;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -124,6 +149,10 @@ export class ClaudeAPI {
               const chunk = event.delta.text;
               fullText += chunk;
               callbacks.onChunk(chunk);
+            } else if (event.type === 'message_start' && event.message?.usage) {
+              inputTokens = event.message.usage.input_tokens ?? 0;
+            } else if (event.type === 'message_delta' && event.usage?.output_tokens) {
+              outputTokens = event.usage.output_tokens;
             }
           } catch {
             // Skip malformed JSON lines
@@ -131,8 +160,13 @@ export class ClaudeAPI {
         }
       }
 
-      callbacks.onComplete(fullText);
+      callbacks.onComplete(fullText, { inputTokens, outputTokens });
     } catch (err) {
+      // Aborts are expected when the user interrupts with a new turn —
+      // treat them as graceful, not as errors.
+      if (err instanceof Error && (err.name === 'AbortError' || options.signal?.aborted)) {
+        return;
+      }
       callbacks.onError(err instanceof Error ? err : new Error(String(err)));
     }
   }

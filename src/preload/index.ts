@@ -3,54 +3,68 @@ import { IPC } from '../shared/types';
 import type {
   ApiKeyName,
   ClaudeModel,
+  OpenAIModel,
+  MindProvider,
   GroqTranscriptionModel,
   FlickySettings,
   VoiceState,
   TranscriptionResult,
   DetectedElement,
+  ReasoningDepth,
+  ReplyTone,
+  MemoryStats,
+  ChatEntry,
 } from '../shared/types';
 
 const api = {
   // ── Settings ───────────────────────────────────────────────────────
-  getSettings: (): Promise<FlickySettings> =>
-    ipcRenderer.invoke(IPC.GET_SETTINGS),
+  getSettings: (): Promise<FlickySettings> => ipcRenderer.invoke(IPC.GET_SETTINGS),
 
-  setModel: (model: ClaudeModel): void =>
-    ipcRenderer.send(IPC.SET_MODEL, model),
+  setModel: (model: ClaudeModel): void => ipcRenderer.send(IPC.SET_MODEL, model),
+  setOpenAIModel: (model: OpenAIModel): void => ipcRenderer.send(IPC.SET_OPENAI_MODEL, model),
+  setMindProvider: (provider: MindProvider): void => ipcRenderer.send(IPC.SET_MIND_PROVIDER, provider),
+  setReasoningDepth: (depth: ReasoningDepth): void => ipcRenderer.send(IPC.SET_REASONING_DEPTH, depth),
+  setReplyTone: (tone: ReplyTone): void => ipcRenderer.send(IPC.SET_REPLY_TONE, tone),
 
-  toggleCursor: (enabled: boolean): void =>
-    ipcRenderer.send(IPC.TOGGLE_CURSOR, enabled),
+  setVoiceId: (id: string): void => ipcRenderer.send(IPC.SET_VOICE_ID, id),
+  setVoiceSpeed: (speed: number): void => ipcRenderer.send(IPC.SET_VOICE_SPEED, speed),
+  setVoiceStability: (stability: number): void => ipcRenderer.send(IPC.SET_VOICE_STABILITY, stability),
+  setSpeakReplies: (enabled: boolean): void => ipcRenderer.send(IPC.SET_SPEAK_REPLIES, enabled),
 
-  setGroqModel: (model: GroqTranscriptionModel): void =>
-    ipcRenderer.send(IPC.SET_GROQ_MODEL, model),
+  setGroqModel: (model: GroqTranscriptionModel): void => ipcRenderer.send(IPC.SET_GROQ_MODEL, model),
+
+  toggleCursor: (enabled: boolean): void => ipcRenderer.send(IPC.TOGGLE_CURSOR, enabled),
+  setLaunchAtLogin: (enabled: boolean): void => ipcRenderer.send(IPC.SET_LAUNCH_AT_LOGIN, enabled),
+  setPushToTalkShortcut: (accel: string): void => ipcRenderer.send(IPC.SET_PUSH_TO_TALK_SHORTCUT, accel),
+  suspendPushToTalkShortcut: (): void => ipcRenderer.send(IPC.SUSPEND_PUSH_TO_TALK_SHORTCUT),
+  resumePushToTalkShortcut: (): void => ipcRenderer.send(IPC.RESUME_PUSH_TO_TALK_SHORTCUT),
+
+  playVoicePreview: (voiceId: string): void => ipcRenderer.send(IPC.PLAY_VOICE_PREVIEW, voiceId),
 
   // ── Permissions ────────────────────────────────────────────────────
-  getPermissions: (): Promise<Record<string, boolean>> =>
-    ipcRenderer.invoke(IPC.GET_PERMISSIONS),
-
-  requestPermission: (kind: string): void =>
-    ipcRenderer.send(IPC.REQUEST_PERMISSION, kind),
+  getPermissions: (): Promise<Record<string, boolean>> => ipcRenderer.invoke(IPC.GET_PERMISSIONS),
+  requestPermission: (kind: string): void => ipcRenderer.send(IPC.REQUEST_PERMISSION, kind),
 
   // ── API Keys ───────────────────────────────────────────────────────
-  setApiKey: (name: ApiKeyName, value: string): void =>
-    ipcRenderer.send(IPC.SET_API_KEY, name, value),
-
-  deleteApiKey: (name: ApiKeyName): void =>
-    ipcRenderer.send(IPC.DELETE_API_KEY, name),
-
+  setApiKey: (name: ApiKeyName, value: string): void => ipcRenderer.send(IPC.SET_API_KEY, name, value),
+  deleteApiKey: (name: ApiKeyName): void => ipcRenderer.send(IPC.DELETE_API_KEY, name),
   getApiKeyStatus: (): Promise<Record<ApiKeyName, boolean>> =>
     ipcRenderer.invoke(IPC.GET_API_KEY_STATUS),
 
-  // ── Lifecycle ──────────────────────────────────────────────────────
-  openExternal: (url: string): void =>
-    ipcRenderer.send(IPC.OPEN_EXTERNAL, url),
-
-  quit: (): void => ipcRenderer.send(IPC.QUIT_APP),
-
-  replayOnboarding: (): void => ipcRenderer.send(IPC.REPLAY_ONBOARDING),
-
+  // ── Memory / context ───────────────────────────────────────────────
+  getMemoryStats: (): Promise<MemoryStats> => ipcRenderer.invoke(IPC.GET_MEMORY_STATS),
+  compactContext: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.COMPACT_CONTEXT),
   clearContext: (): void => ipcRenderer.send(IPC.CLEAR_CONTEXT),
 
+  // ── Chat history ────────────────────────────────────────────────────
+  getChatHistory: (): Promise<ChatEntry[]> => ipcRenderer.invoke(IPC.GET_CHAT_HISTORY),
+  clearChatHistory: (): void => ipcRenderer.send(IPC.CLEAR_CHAT_HISTORY),
+
+  // ── Lifecycle ──────────────────────────────────────────────────────
+  openExternal: (url: string): void => ipcRenderer.send(IPC.OPEN_EXTERNAL, url),
+  quit: (): void => ipcRenderer.send(IPC.QUIT_APP),
+  replayOnboarding: (): void => ipcRenderer.send(IPC.REPLAY_ONBOARDING),
   completeOnboarding: (): void => ipcRenderer.send(IPC.COMPLETE_ONBOARDING),
 
   // ── Event listeners (Main → Renderer) ──────────────────────────────
@@ -102,7 +116,39 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.PERMISSION_STATUS, handler);
   },
 
+  onMemoryStats: (cb: (stats: MemoryStats) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, stats: MemoryStats) => cb(stats);
+    ipcRenderer.on(IPC.MEMORY_STATS, handler);
+    return () => ipcRenderer.removeListener(IPC.MEMORY_STATS, handler);
+  },
+
+  onChatEntryAdded: (cb: (entry: ChatEntry) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, entry: ChatEntry) => cb(entry);
+    ipcRenderer.on(IPC.CHAT_ENTRY_ADDED, handler);
+    return () => ipcRenderer.removeListener(IPC.CHAT_ENTRY_ADDED, handler);
+  },
+
   // ── Audio Capture (overlay ↔ main) ──────────────────────────────────
+  // ── Overlay / display info ────────────────────────────────────────
+  onDisplayInfo: (
+    cb: (info: {
+      id: number;
+      bounds: { x: number; y: number; width: number; height: number };
+      scaleFactor: number;
+    }) => void,
+  ) => {
+    const handler = (
+      _e: Electron.IpcRendererEvent,
+      info: {
+        id: number;
+        bounds: { x: number; y: number; width: number; height: number };
+        scaleFactor: number;
+      },
+    ) => cb(info);
+    ipcRenderer.on('display-info', handler);
+    return () => ipcRenderer.removeListener('display-info', handler);
+  },
+
   onStartCapture: (cb: () => void) => {
     const handler = () => cb();
     ipcRenderer.on('start-audio-capture', handler);

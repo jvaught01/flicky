@@ -1,27 +1,31 @@
-import { systemPreferences } from 'electron';
+import { app, systemPreferences } from 'electron';
 import { ClaudeAPI } from './services/claude-api';
+import { OpenAIAPI } from './services/openai-api';
 import { ElevenLabsTTS } from './services/elevenlabs-tts';
 import { createTranscriptionProvider, type TranscriptionProvider } from './services/transcription';
 import { captureAllDisplays } from './services/screen-capture';
 import { parsePointTags } from './services/element-detector';
+import { ContextManager } from './services/context-manager';
 import * as settingsStore from './services/settings-store';
 import * as keyStore from './services/key-store';
+import * as chatHistory from './services/chat-history-store';
 import * as analytics from './services/analytics';
 import type {
   VoiceState,
   FlickySettings,
   ClaudeModel,
+  OpenAIModel,
+  MindProvider,
   GroqTranscriptionModel,
-  ConversationTurn,
   TranscriptionResult,
   DetectedElement,
   ScreenCapture,
   ApiKeyName,
+  ReasoningDepth,
+  ReplyTone,
+  MemoryStats,
+  ChatEntry,
 } from '../shared/types';
-
-// Keep last 6 exchanges (12 turns). Older context gets dropped to keep
-// the context window lean and avoid confusion from stale screen references.
-const MAX_HISTORY = 6;
 
 export interface CompanionCallbacks {
   onVoiceStateChanged: (state: VoiceState) => void;
@@ -30,6 +34,8 @@ export interface CompanionCallbacks {
   onAiResponseComplete: (fullText: string) => void;
   onElementDetected: (element: DetectedElement | null) => void;
   onSettingsChanged: (settings: FlickySettings) => void;
+  onMemoryStatsChanged: (stats: MemoryStats) => void;
+  onChatEntryAdded: (entry: ChatEntry) => void;
   onStartAudioCapture: () => void;
   onStopAudioCapture: () => void;
   onPlayAudio: (audioBuffer: Buffer) => void;
@@ -39,18 +45,36 @@ export class CompanionManager {
   private callbacks: CompanionCallbacks;
 
   private claude: ClaudeAPI;
+  private openai: OpenAIAPI;
   private tts: ElevenLabsTTS;
+  private context: ContextManager;
   private transcriptionProvider: TranscriptionProvider | null = null;
 
   private voiceState: VoiceState = 'idle';
-  private conversationHistory: ConversationTurn[] = [];
   private lastScreenshots: ScreenCapture[] = [];
   private isRecording = false;
+  private reRegisterShortcut: ((accel: string) => boolean) | null = null;
+  /**
+   * Monotonic turn counter. A new PTT press bumps this; any still-running
+   * LLM callbacks from the previous turn check if their captured id still
+   * matches before they're allowed to mutate shared state.
+   */
+  private turnId = 0;
+  private currentAbort: AbortController | null = null;
+  /**
+   * If startRecording is in flight, other callers (typically a quick-release
+   * stopPushToTalk) await this before deciding whether to stop. Without it,
+   * stop can fire before `isRecording` has been flipped true, bail, and
+   * leave the mic running forever.
+   */
+  private pendingStart: Promise<void> | null = null;
 
   constructor(callbacks: CompanionCallbacks) {
     this.callbacks = callbacks;
     this.claude = new ClaudeAPI();
+    this.openai = new OpenAIAPI();
     this.tts = new ElevenLabsTTS();
+    this.context = new ContextManager();
 
     analytics.initAnalytics('', 'https://us.i.posthog.com');
     analytics.trackAppOpened();
@@ -66,60 +90,179 @@ export class CompanionManager {
     };
   }
 
-  setGroqModel(model: GroqTranscriptionModel): void {
-    settingsStore.set('groqTranscriptionModel', model);
-    this.callbacks.onSettingsChanged(this.getSettings());
-  }
-
   setModel(model: ClaudeModel): void {
     settingsStore.set('selectedModel', model);
-    this.callbacks.onSettingsChanged(this.getSettings());
+    this.emitSettings();
+  }
+
+  setOpenAIModel(model: OpenAIModel): void {
+    settingsStore.set('selectedOpenAIModel', model);
+    this.emitSettings();
+  }
+
+  setMindProvider(provider: MindProvider): void {
+    settingsStore.set('mindProvider', provider);
+    this.emitSettings();
+  }
+
+  setReasoningDepth(depth: ReasoningDepth): void {
+    settingsStore.set('reasoningDepth', depth);
+    this.emitSettings();
+  }
+
+  setReplyTone(tone: ReplyTone): void {
+    settingsStore.set('replyTone', tone);
+    this.emitSettings();
+  }
+
+  setVoiceId(id: string): void {
+    settingsStore.set('voiceId', id);
+    this.emitSettings();
+  }
+
+  setVoiceSpeed(speed: number): void {
+    settingsStore.set('voiceSpeed', speed);
+    this.emitSettings();
+  }
+
+  setVoiceStability(stability: number): void {
+    settingsStore.set('voiceStability', stability);
+    this.emitSettings();
+  }
+
+  setSpeakReplies(enabled: boolean): void {
+    settingsStore.set('speakReplies', enabled);
+    this.emitSettings();
+  }
+
+  setGroqModel(model: GroqTranscriptionModel): void {
+    settingsStore.set('groqTranscriptionModel', model);
+    this.emitSettings();
   }
 
   toggleCursor(enabled: boolean): void {
     settingsStore.set('isClickyCursorEnabled', enabled);
-    this.callbacks.onSettingsChanged(this.getSettings());
+    this.emitSettings();
+  }
+
+  setShortcutReRegister(fn: (accel: string) => boolean): void {
+    this.reRegisterShortcut = fn;
+  }
+
+  setPushToTalkShortcut(accelerator: string): void {
+    const previous = settingsStore.get('pushToTalkShortcut');
+    if (!this.reRegisterShortcut) {
+      settingsStore.set('pushToTalkShortcut', accelerator);
+      this.emitSettings();
+      return;
+    }
+    const ok = this.reRegisterShortcut(accelerator);
+    if (ok) {
+      settingsStore.set('pushToTalkShortcut', accelerator);
+    } else {
+      console.warn('[Flicky] Failed to register shortcut', accelerator, '— reverting to', previous);
+      this.reRegisterShortcut(previous);
+    }
+    this.emitSettings();
+  }
+
+  setLaunchAtLogin(enabled: boolean): void {
+    settingsStore.set('launchAtLogin', enabled);
+    try {
+      app.setLoginItemSettings({ openAtLogin: enabled });
+    } catch (err) {
+      console.error('[Flicky] setLoginItemSettings failed:', err);
+    }
+    this.emitSettings();
   }
 
   completeOnboarding(): void {
     settingsStore.set('onboardingComplete', true);
-    this.callbacks.onSettingsChanged(this.getSettings());
+    this.emitSettings();
   }
 
   replayOnboarding(): void {
     settingsStore.set('onboardingComplete', false);
     analytics.trackOnboardingReplayed();
-    this.callbacks.onSettingsChanged(this.getSettings());
+    this.emitSettings();
   }
+
+  // ── Context / Memory ─────────────────────────────────────────────────
 
   clearContext(): void {
-    this.conversationHistory = [];
+    this.context.clear();
+    this.emitMemoryStats();
   }
 
-  // ── API Key Management ───────────────────────────────────────────────
+  async compactContext(): Promise<{ ok: boolean; error?: string }> {
+    if (!this.context.canCompact()) {
+      return { ok: false, error: 'Need at least two exchanges before compacting.' };
+    }
+    try {
+      await this.context.compact(true);
+      this.emitMemoryStats();
+      return { ok: true };
+    } catch (err) {
+      this.emitMemoryStats();
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  getMemoryStats(): MemoryStats {
+    return this.context.getStats();
+  }
+
+  // ── Chat history ─────────────────────────────────────────────────────
+
+  getChatHistory(): ChatEntry[] {
+    return chatHistory.getAll();
+  }
+
+  clearChatHistory(): void {
+    chatHistory.clear();
+  }
+
+  // ── API Keys ─────────────────────────────────────────────────────────
 
   setApiKey(name: ApiKeyName, value: string): void {
     keyStore.setApiKey(name, value);
-    this.callbacks.onSettingsChanged(this.getSettings());
+    this.emitSettings();
   }
 
   deleteApiKey(name: ApiKeyName): void {
     keyStore.deleteApiKey(name);
-    this.callbacks.onSettingsChanged(this.getSettings());
+    this.emitSettings();
   }
 
   getApiKeyStatus(): Record<ApiKeyName, boolean> {
     return keyStore.getKeyStatus();
   }
 
+  // ── TTS preview ──────────────────────────────────────────────────────
+
+  async playVoicePreview(voiceId: string): Promise<void> {
+    try {
+      const buf = await this.tts.synthesize(
+        "hi, i'm flicky. i'll be using this voice to talk with you.",
+        {
+          voiceId,
+          speed: settingsStore.get('voiceSpeed'),
+          stability: settingsStore.get('voiceStability'),
+        },
+      );
+      this.callbacks.onPlayAudio(buf);
+    } catch (err) {
+      console.error('[Flicky] voice preview failed:', err);
+    }
+  }
+
   // ── Permissions ──────────────────────────────────────────────────────
 
   async getPermissions(): Promise<Record<string, boolean>> {
-    const perms: Record<string, boolean> = {
-      microphone: false,
-      screen: false,
-    };
-
+    const perms: Record<string, boolean> = { microphone: false, screen: false };
     if (process.platform === 'darwin') {
       perms.microphone = systemPreferences.getMediaAccessStatus('microphone') === 'granted';
       perms.screen = systemPreferences.getMediaAccessStatus('screen') === 'granted';
@@ -127,39 +270,53 @@ export class CompanionManager {
       perms.microphone = true;
       perms.screen = true;
     }
-
     return perms;
   }
 
   async requestPermission(kind: string): Promise<void> {
-    if (process.platform === 'darwin') {
-      if (kind === 'microphone') {
-        await systemPreferences.askForMediaAccess('microphone');
-      }
+    if (process.platform === 'darwin' && kind === 'microphone') {
+      await systemPreferences.askForMediaAccess('microphone');
     }
   }
 
   // ── Push-to-Talk Pipeline ────────────────────────────────────────────
 
   async handlePushToTalk(): Promise<void> {
-    if (this.isRecording) {
-      await this.stopRecordingAndProcess();
-    } else {
-      await this.startRecording();
-    }
+    if (this.isRecording) await this.stopRecordingAndProcess();
+    else await this.startRecording();
   }
 
   async startPushToTalk(): Promise<void> {
-    if (this.isRecording) return;
-    await this.startRecording();
+    if (this.isRecording || this.pendingStart) return;
+    const p = this.startRecording();
+    this.pendingStart = p;
+    try {
+      await p;
+    } finally {
+      if (this.pendingStart === p) this.pendingStart = null;
+    }
   }
 
   async stopPushToTalk(): Promise<void> {
+    // If a start is still in flight, let it finish so isRecording flips
+    // true before we decide whether to stop. Otherwise a quick press/release
+    // can race past the start and leak a live mic.
+    if (this.pendingStart) {
+      try { await this.pendingStart; } catch { /* surfaced inside startRecording */ }
+    }
     if (!this.isRecording) return;
     await this.stopRecordingAndProcess();
   }
 
   private async startRecording(): Promise<void> {
+    // Bump the turn and abort any in-flight work from the previous one
+    // so the user's new message supersedes whatever Flicky was doing.
+    this.turnId += 1;
+    if (this.currentAbort) {
+      this.currentAbort.abort();
+      this.currentAbort = null;
+    }
+
     this.isRecording = true;
     this.setVoiceState('listening');
     analytics.trackPushToTalkStarted();
@@ -202,7 +359,6 @@ export class CompanionManager {
     this.callbacks.onTranscriptUpdate(result);
     analytics.trackUserMessageSent(result.text);
 
-    // Capture screenshots
     this.setVoiceState('processing');
     try {
       this.lastScreenshots = await captureAllDisplays();
@@ -211,70 +367,128 @@ export class CompanionManager {
       this.lastScreenshots = [];
     }
 
-    // Send to Claude
-    const model = settingsStore.get('selectedModel');
+    const settings = settingsStore.getAll();
+    const myTurnId = this.turnId;
+    const abort = new AbortController();
+    this.currentAbort = abort;
     this.setVoiceState('responding');
 
-    await this.claude.streamChat(
-      result.text,
-      this.lastScreenshots,
-      this.conversationHistory,
-      model,
-      {
-        onChunk: (chunk) => {
-          this.callbacks.onAiResponseChunk(chunk);
-        },
-        onComplete: async (fullText) => {
-          analytics.trackAiResponseReceived(fullText);
+    // Every side effect below is gated on the turn id. If the user has
+    // already started a new PTT by the time an async callback resolves,
+    // we drop the callback on the floor — no stale UI mutations, no
+    // stale chat entries, no TTS we'd have to kill on arrival.
+    const isCurrent = () => this.turnId === myTurnId;
 
-          const cleanText = fullText.replace(/\[POINT:[^\]]+\]/g, '').trim();
-          this.callbacks.onAiResponseComplete(cleanText);
+    const mindCallbacks = {
+      onChunk: (chunk: string) => {
+        if (!isCurrent()) return;
+        this.callbacks.onAiResponseChunk(chunk);
+      },
+      onComplete: async (
+        fullText: string,
+        usage?: { inputTokens: number; outputTokens: number },
+      ) => {
+        if (!isCurrent()) return;
+        analytics.trackAiResponseReceived(fullText);
 
-          // Update conversation history
-          this.conversationHistory.push(
-            { role: 'user', content: result.text },
-            { role: 'assistant', content: cleanText },
-          );
-          if (this.conversationHistory.length > MAX_HISTORY * 2) {
-            this.conversationHistory = this.conversationHistory.slice(-MAX_HISTORY * 2);
-          }
+        const cleanText = fullText.replace(/\[POINT:[^\]]+\]/g, '').trim();
+        this.callbacks.onAiResponseComplete(cleanText);
 
-          // Detect element pointing
-          const element = parsePointTags(fullText, this.lastScreenshots);
-          if (element) {
-            this.callbacks.onElementDetected(element);
-            analytics.trackElementPointed(element.label);
-          }
+        await this.context.recordExchange(result.text, cleanText, {
+          inputTokens: usage?.inputTokens,
+          outputTokens: usage?.outputTokens,
+        });
+        if (!isCurrent()) return;
+        this.emitMemoryStats();
 
-          // Text-to-speech
+        const entry = chatHistory.append({
+          userText: result.text,
+          assistantText: cleanText,
+        });
+        this.callbacks.onChatEntryAdded(entry);
+
+        const element = parsePointTags(fullText, this.lastScreenshots);
+        if (element) {
+          this.callbacks.onElementDetected(element);
+          analytics.trackElementPointed(element.label);
+        }
+
+        if (settings.speakReplies && keyStore.getKeyStatus().elevenlabs) {
           try {
-            const audioBuffer = await this.tts.synthesize(cleanText);
+            const audioBuffer = await this.tts.synthesize(cleanText, {
+              voiceId: settings.voiceId,
+              speed: settings.voiceSpeed,
+              stability: settings.voiceStability,
+            });
+            // User may have started a new turn while TTS was synthesizing;
+            // don't play an answer they no longer want to hear.
+            if (!isCurrent()) return;
             this.callbacks.onPlayAudio(audioBuffer);
           } catch (err) {
             console.error('TTS error:', err);
             analytics.trackTtsError(String(err));
           }
+        }
 
-          this.setVoiceState('idle');
-          // Delay clearing the element so the cursor holds at the target
-          // while the user reads the response / listens to TTS
-          setTimeout(() => this.callbacks.onElementDetected(null), 6000);
-        },
-        onError: (err) => {
-          console.error('Claude API error:', err);
-          analytics.trackResponseError(err.message);
-          this.setVoiceState('idle');
-        },
+        if (!isCurrent()) return;
+        this.setVoiceState('idle');
+        setTimeout(() => {
+          if (isCurrent()) this.callbacks.onElementDetected(null);
+        }, 6000);
       },
-    );
+      onError: (err: Error) => {
+        if (!isCurrent()) return;
+        console.error('Mind provider error:', err);
+        analytics.trackResponseError(err.message);
+        this.setVoiceState('idle');
+      },
+    };
+
+    const mindOptions = {
+      reasoningDepth: settings.reasoningDepth,
+      replyTone: settings.replyTone,
+      signal: abort.signal,
+    };
+
+    if (settings.mindProvider === 'openai') {
+      await this.openai.streamChat(
+        result.text,
+        this.lastScreenshots,
+        this.context.getMessagesForSend(),
+        settings.selectedOpenAIModel,
+        mindOptions,
+        mindCallbacks,
+      );
+    } else {
+      await this.claude.streamChat(
+        result.text,
+        this.lastScreenshots,
+        this.context.getMessagesForSend(),
+        settings.selectedModel,
+        mindOptions,
+        mindCallbacks,
+      );
+    }
+
+    if (this.currentAbort === abort) this.currentAbort = null;
   }
 
   handleAudioChunk(buffer: Buffer): void {
     this.transcriptionProvider?.sendAudio(buffer);
   }
 
+  // ── Internal ─────────────────────────────────────────────────────────
+
   private setVoiceState(state: VoiceState): void {
     this.voiceState = state;
     this.callbacks.onVoiceStateChanged(state);
+  }
+
+  private emitSettings(): void {
+    this.callbacks.onSettingsChanged(this.getSettings());
+  }
+
+  private emitMemoryStats(): void {
+    this.callbacks.onMemoryStatsChanged(this.context.getStats());
   }
 }

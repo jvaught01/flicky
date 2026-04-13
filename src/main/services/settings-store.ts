@@ -1,7 +1,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
-import type { ClaudeModel, GroqTranscriptionModel, TranscriptionProviderType } from '../../shared/types';
+import { writeFileAtomic } from './fs-util';
+import type {
+  ClaudeModel,
+  OpenAIModel,
+  MindProvider,
+  GroqTranscriptionModel,
+  TranscriptionProviderType,
+  ReasoningDepth,
+  ReplyTone,
+} from '../../shared/types';
 
 /**
  * Simple JSON-file settings store.
@@ -9,18 +18,46 @@ import type { ClaudeModel, GroqTranscriptionModel, TranscriptionProviderType } f
  */
 
 export interface StoredSettings {
+  mindProvider: MindProvider;
   selectedModel: ClaudeModel;
+  selectedOpenAIModel: OpenAIModel;
+  reasoningDepth: ReasoningDepth;
+  replyTone: ReplyTone;
+
+  voiceId: string;
+  voiceSpeed: number;
+  voiceStability: number;
+  speakReplies: boolean;
+
   groqTranscriptionModel: GroqTranscriptionModel;
-  isClickyCursorEnabled: boolean;
   transcriptionProvider: TranscriptionProviderType;
+
+  isClickyCursorEnabled: boolean;
+  launchAtLogin: boolean;
+  pushToTalkShortcut: string;
+
   onboardingComplete: boolean;
 }
 
 const DEFAULTS: StoredSettings = {
+  mindProvider: 'anthropic',
   selectedModel: 'claude-sonnet-4-6',
+  selectedOpenAIModel: 'gpt-5',
+  reasoningDepth: 'off',
+  replyTone: 'friendly',
+
+  voiceId: 'pMsXgVXv3BLzUgSXRplE',
+  voiceSpeed: 1.0,
+  voiceStability: 0.5,
+  speakReplies: true,
+
   groqTranscriptionModel: 'whisper-large-v3-turbo',
-  isClickyCursorEnabled: true,
   transcriptionProvider: 'groq',
+
+  isClickyCursorEnabled: true,
+  launchAtLogin: false,
+  pushToTalkShortcut: 'Ctrl+Alt+X',
+
   onboardingComplete: false,
 };
 
@@ -38,7 +75,7 @@ function read(): StoredSettings {
 }
 
 function write(data: StoredSettings): void {
-  fs.writeFileSync(getFilePath(), JSON.stringify(data, null, 2), 'utf-8');
+  writeFileAtomic(getFilePath(), JSON.stringify(data, null, 2));
 }
 
 export function get<K extends keyof StoredSettings>(key: K): StoredSettings[K] {

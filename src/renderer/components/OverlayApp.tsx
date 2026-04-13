@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { VoiceState, DetectedElement } from '../../shared/types';
+import { Waveform } from './Waveform';
 
 const POINTING_PHRASES = [
   'right here!',
@@ -16,19 +17,11 @@ function randomPhrase(): string {
   return POINTING_PHRASES[Math.floor(Math.random() * POINTING_PHRASES.length)];
 }
 
-/**
- * Companion cursor behavior modes:
- * - 'following'  → smoothly tracks the user's mouse
- * - 'navigating' → flying to a target element Claude pointed at
- * - 'holding'    → staying at the target while Claude explains
- * - 'returning'  → smoothly drifting back to the mouse after holding
- */
 type CursorMode = 'following' | 'navigating' | 'holding' | 'returning';
 
 export function OverlayApp() {
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
-  const [responseText, setResponseText] = useState('');
   const [detectedElement, setDetectedElement] = useState<DetectedElement | null>(null);
   const [pointingPhrase, setPointingPhrase] = useState('');
   const [cursorMode, setCursorMode] = useState<CursorMode>('following');
@@ -37,8 +30,6 @@ export function OverlayApp() {
   const displayRef = useRef<{ id: number; bounds: { x: number; y: number; width: number; height: number } } | null>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const returnAnimRef = useRef<number | null>(null);
-  const responseClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cursorModeRef = useRef<CursorMode>('following');
   const cursorPosRef = useRef({ x: 0, y: 0 });
   const companionPosRef = useRef({ x: 0, y: 0 });
 
@@ -46,26 +37,53 @@ export function OverlayApp() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const scriptNodeRef = useRef<ScriptProcessorNode | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  /** true while getUserMedia hasn't resolved yet. */
+  const micStartingRef = useRef(false);
+  /** set by stopMic so a pending start can abort before attaching. */
+  const micStopRequestedRef = useRef(false);
+
+  // ── TTS playback (cancelable) ───────────────────────────────────────
+  const ttsRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
+  const stopCurrentTts = useCallback(() => {
+    const current = ttsRef.current;
+    if (!current) return;
+    try {
+      current.audio.pause();
+      current.audio.src = '';
+    } catch { /* ignore */ }
+    URL.revokeObjectURL(current.url);
+    ttsRef.current = null;
+  }, []);
 
   useEffect(() => {
     const startMic = async () => {
+      // Ignore overlapping starts.
+      if (micStartingRef.current || mediaStreamRef.current) return;
+      micStartingRef.current = true;
+      micStopRequestedRef.current = false;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true },
         });
+
+        // A stop may have arrived before getUserMedia resolved; if so,
+        // release the stream immediately instead of attaching it.
+        if (micStopRequestedRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
         mediaStreamRef.current = stream;
 
         const ctx = new AudioContext({ sampleRate: 16000 });
         audioCtxRef.current = ctx;
         const source = ctx.createMediaStreamSource(stream);
 
-        // ScriptProcessor to get raw PCM and send to main
         const processor = ctx.createScriptProcessor(4096, 1, 1);
         scriptNodeRef.current = processor;
 
         processor.onaudioprocess = (e) => {
           const float32 = e.inputBuffer.getChannelData(0);
-          // Convert Float32 → PCM16
           const pcm16 = new Int16Array(float32.length);
           for (let i = 0; i < float32.length; i++) {
             const s = Math.max(-1, Math.min(1, float32[i]));
@@ -78,10 +96,14 @@ export function OverlayApp() {
         processor.connect(ctx.destination);
       } catch (err) {
         console.error('[Flicky] Mic capture failed:', err);
+      } finally {
+        micStartingRef.current = false;
       }
     };
 
     const stopMic = () => {
+      // Flag for any in-flight startMic to bail before it attaches.
+      micStopRequestedRef.current = true;
       scriptNodeRef.current?.disconnect();
       scriptNodeRef.current = null;
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -93,30 +115,23 @@ export function OverlayApp() {
     const unsubStart = window.flicky.onStartCapture(() => startMic());
     const unsubStop = window.flicky.onStopCapture(() => stopMic());
 
-    // Play TTS audio from main process, then clear bubble after playback
+    // Play TTS audio. Any previous playback is interrupted first so
+    // back-to-back responses don't stack on top of each other.
     const unsubPlayAudio = window.flicky.onPlayAudio(async (audioData) => {
+      stopCurrentTts();
       try {
         const blob = new Blob([audioData], { type: 'audio/mpeg' });
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
+        ttsRef.current = { audio, url };
         audio.onended = () => {
           URL.revokeObjectURL(url);
-          // Clear speech bubble 5 seconds after TTS finishes
-          if (responseClearTimerRef.current) clearTimeout(responseClearTimerRef.current);
-          responseClearTimerRef.current = setTimeout(() => {
-            setResponseText('');
-            responseClearTimerRef.current = null;
-          }, 5000);
+          if (ttsRef.current?.audio === audio) ttsRef.current = null;
         };
         await audio.play();
       } catch (err) {
         console.error('[Flicky] Audio playback failed:', err);
-        // If TTS fails, fall back to clearing after 5 seconds
-        if (responseClearTimerRef.current) clearTimeout(responseClearTimerRef.current);
-        responseClearTimerRef.current = setTimeout(() => {
-          setResponseText('');
-          responseClearTimerRef.current = null;
-        }, 5000);
+        stopCurrentTts();
       }
     });
 
@@ -128,9 +143,7 @@ export function OverlayApp() {
     };
   }, []);
 
-  // Keep refs in sync with state for use in animation callbacks
   const setCursorModeSync = useCallback((mode: CursorMode) => {
-    cursorModeRef.current = mode;
     setCursorMode(mode);
   }, []);
 
@@ -139,7 +152,6 @@ export function OverlayApp() {
     setCompanionPos(pos);
   }, []);
 
-  // Smooth return animation: lerp from current position back to mouse
   const startReturnAnimation = useCallback(() => {
     setCursorModeSync('returning');
 
@@ -151,18 +163,13 @@ export function OverlayApp() {
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       if (dist < 2) {
-        // Close enough — snap and resume following
         setCompanionPosSync(target);
         setCursorModeSync('following');
         returnAnimRef.current = null;
         return;
       }
 
-      // Ease toward mouse (lerp factor 0.08 = smooth drift)
-      const next = {
-        x: current.x + dx * 0.08,
-        y: current.y + dy * 0.08,
-      };
+      const next = { x: current.x + dx * 0.08, y: current.y + dy * 0.08 };
       setCompanionPosSync(next);
       returnAnimRef.current = requestAnimationFrame(animate);
     };
@@ -170,21 +177,15 @@ export function OverlayApp() {
     returnAnimRef.current = requestAnimationFrame(animate);
   }, [setCursorModeSync, setCompanionPosSync]);
 
-  // When following, sync companion position to mouse
   useEffect(() => {
-    if (cursorMode === 'following') {
-      setCompanionPosSync(cursorPos);
-    }
+    if (cursorMode === 'following') setCompanionPosSync(cursorPos);
     cursorPosRef.current = cursorPos;
   }, [cursorPos, cursorMode, setCompanionPosSync]);
 
   useEffect(() => {
-    // Listen for display info from main process
-    const handleDisplayInfo = (_e: Event, info: { id: number; bounds: { x: number; y: number; width: number; height: number } }) => {
-      displayRef.current = info;
-    };
-    // @ts-expect-error — electron IPC on window
-    window.electronAPI?.onDisplayInfo?.(handleDisplayInfo);
+    const unsubDisplayInfo = window.flicky.onDisplayInfo((info) => {
+      displayRef.current = { id: info.id, bounds: info.bounds };
+    });
 
     const unsubs = [
       window.flicky.onVoiceStateChanged(setVoiceState),
@@ -201,21 +202,8 @@ export function OverlayApp() {
           setCursorPos(pos);
         }
       }),
-      window.flicky.onAiResponseChunk((chunk) => {
-        setResponseText((prev) => prev + chunk);
-      }),
-      window.flicky.onAiResponseComplete(() => {
-        // Bubble stays visible until TTS playback ends + 5 seconds.
-        // If no TTS key is set, fall back to clearing after 8 seconds.
-        if (responseClearTimerRef.current) clearTimeout(responseClearTimerRef.current);
-        responseClearTimerRef.current = setTimeout(() => {
-          setResponseText('');
-          responseClearTimerRef.current = null;
-        }, 8000);
-      }),
       window.flicky.onElementDetected((el) => {
         if (el) {
-          // Cancel any return animation in progress
           if (returnAnimRef.current) {
             cancelAnimationFrame(returnAnimRef.current);
             returnAnimRef.current = null;
@@ -228,7 +216,6 @@ export function OverlayApp() {
           setPointingPhrase(randomPhrase());
           setDetectedElement(el);
 
-          // Compute target in local coords
           const bounds = displayRef.current?.bounds;
           const localTarget = {
             x: el.x - (bounds?.x ?? 0),
@@ -237,37 +224,30 @@ export function OverlayApp() {
           setCompanionPosSync(localTarget);
           setCursorModeSync('navigating');
 
-          // After the fly-in animation completes, switch to holding
           setTimeout(() => setCursorModeSync('holding'), 650);
         } else {
-          // Element cleared — hold position, then smoothly return
           setDetectedElement(null);
           holdTimerRef.current = setTimeout(() => {
             holdTimerRef.current = null;
             startReturnAnimation();
-          }, 3000); // Hold at target for 3 seconds after clearing
+          }, 3000);
         }
       }),
     ];
 
     return () => {
+      unsubDisplayInfo();
       unsubs.forEach((u) => u());
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
       if (returnAnimRef.current) cancelAnimationFrame(returnAnimRef.current);
-      if (responseClearTimerRef.current) clearTimeout(responseClearTimerRef.current);
     };
   }, [setCursorModeSync, setCompanionPosSync, startReturnAnimation]);
 
-  // Reset response text when a new listening session starts
   useEffect(() => {
     if (voiceState === 'listening') {
-      setResponseText('');
+      // User started a new turn — interrupt anything Flicky was saying.
+      stopCurrentTts();
       setDetectedElement(null);
-      if (responseClearTimerRef.current) {
-        clearTimeout(responseClearTimerRef.current);
-        responseClearTimerRef.current = null;
-      }
-      // Cancel any hold/return and snap back to following
       if (holdTimerRef.current) {
         clearTimeout(holdTimerRef.current);
         holdTimerRef.current = null;
@@ -278,27 +258,24 @@ export function OverlayApp() {
       }
       setCursorModeSync('following');
     }
-  }, [voiceState, setCursorModeSync]);
+  }, [voiceState, setCursorModeSync, stopCurrentTts]);
 
   const isNavigating = cursorMode === 'navigating';
   const isHolding = cursorMode === 'holding';
-
-  // Only render the companion on the display where the cursor is,
-  // or on the display being pointed at (navigating/holding).
   const showOnThisDisplay = isCursorOnThisDisplay || isNavigating || isHolding;
 
-  // Cursor transition style depends on mode
   const cursorTransition = isNavigating
     ? 'left 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), top 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)'
     : cursorMode === 'following'
       ? 'left 0.05s linear, top 0.05s linear'
-      : 'none'; // 'holding' and 'returning' — position set directly
+      : 'none';
+
+  void detectedElement;
 
   return (
     <div className="overlay-container">
       {showOnThisDisplay && (
         <>
-          {/* Blue triangle cursor — companion cursor with independent position */}
           <div
             className={`cursor-triangle ${isNavigating || isHolding ? 'navigating' : ''}`}
             style={{
@@ -307,41 +284,64 @@ export function OverlayApp() {
               transition: cursorTransition,
             }}
           >
-            <svg viewBox="0 0 24 28" xmlns="http://www.w3.org/2000/svg">
-              <polygon points="12,0 24,28 0,28" />
+            <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="fl-front" x1="10%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#e0f2fe" />
+                  <stop offset="50%" stopColor="#7dd3fc" />
+                  <stop offset="100%" stopColor="#2563eb" />
+                </linearGradient>
+              </defs>
+
+              {/* Single glossy triangle — tip at upper-left, body trails down-right */}
+              <polygon
+                points="4,4 34,14 14,32"
+                fill="url(#fl-front)"
+                stroke="url(#fl-front)"
+                strokeWidth="3"
+                strokeLinejoin="round"
+              />
+
+              {/* Upper edge gloss highlight */}
+              <polyline
+                points="4,4 34,14"
+                fill="none"
+                stroke="rgba(255,255,255,0.65)"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+              <polyline
+                points="4,4 14,32"
+                fill="none"
+                stroke="rgba(255,255,255,0.4)"
+                strokeWidth="1"
+                strokeLinecap="round"
+              />
             </svg>
           </div>
 
-          {/* Waveform during listening */}
           {voiceState === 'listening' && (
-            <Waveform x={companionPos.x + 30} y={companionPos.y - 4} />
-          )}
-
-          {/* Spinner during processing */}
-          {voiceState === 'processing' && (
             <div
-              className="processing-spinner"
-              style={{ left: companionPos.x + 30, top: companionPos.y }}
-            />
-          )}
-
-          {/* Speech bubble follows the companion cursor */}
-          {responseText && (
-            <div
-              className="speech-bubble"
-              style={{ left: companionPos.x + 30, top: companionPos.y - 10 }}
+              className="overlay-waveform"
+              style={{ left: companionPos.x + 44, top: companionPos.y + 2 }}
             >
-              {responseText}
+              <Waveform state="listening" bars={10} height={22} />
             </div>
           )}
 
-          {/* Pointing label — shown while navigating or holding at target */}
+          {voiceState === 'processing' && (
+            <div
+              className="processing-spinner"
+              style={{ left: companionPos.x + 44, top: companionPos.y + 6 }}
+            />
+          )}
+
           {(isNavigating || isHolding) && pointingPhrase && (
             <div
               className="pointing-bubble"
               style={{
-                left: companionPos.x + 30,
-                top: companionPos.y - 10,
+                left: companionPos.x + 44,
+                top: companionPos.y - 8,
               }}
             >
               {pointingPhrase}
@@ -349,27 +349,6 @@ export function OverlayApp() {
           )}
         </>
       )}
-    </div>
-  );
-}
-
-function Waveform({ x, y }: { x: number; y: number }) {
-  const [bars, setBars] = useState<number[]>(Array(12).fill(3));
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setBars((prev) =>
-        prev.map(() => 3 + Math.random() * 18),
-      );
-    }, 70);
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <div className="waveform" style={{ left: x, top: y }}>
-      {bars.map((height, i) => (
-        <div key={i} className="waveform-bar" style={{ height }} />
-      ))}
     </div>
   );
 }
