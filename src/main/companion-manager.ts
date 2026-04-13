@@ -46,6 +46,10 @@ export class CompanionManager {
   private conversationHistory: ConversationTurn[] = [];
   private lastScreenshots: ScreenCapture[] = [];
   private isRecording = false;
+  // True while the async pipeline (transcription → screen capture → Claude → TTS)
+  // is in flight after the key was released. Prevents a second PTT press from
+  // launching a concurrent pipeline while the previous one is still completing.
+  private isProcessing = false;
 
   constructor(callbacks: CompanionCallbacks) {
     this.callbacks = callbacks;
@@ -167,7 +171,7 @@ export class CompanionManager {
   }
 
   async startPushToTalk(): Promise<void> {
-    if (this.isRecording) return;
+    if (this.isRecording || this.isProcessing) return;
     await this.startRecording();
   }
 
@@ -200,11 +204,13 @@ export class CompanionManager {
 
   private async stopRecordingAndProcess(): Promise<void> {
     this.isRecording = false;
+    this.isProcessing = true;
     this.callbacks.onStopAudioCapture();
     analytics.trackPushToTalkReleased();
 
     if (!this.transcriptionProvider) {
       this.setVoiceState('idle');
+      this.isProcessing = false;
       return;
     }
 
@@ -213,6 +219,7 @@ export class CompanionManager {
 
     if (!result.text.trim()) {
       this.setVoiceState('idle');
+      this.isProcessing = false;
       return;
     }
 
@@ -273,6 +280,7 @@ export class CompanionManager {
           }
 
           this.setVoiceState('idle');
+          this.isProcessing = false;
           // Delay clearing the element so the cursor holds at the target
           // while the user reads the response / listens to TTS
           setTimeout(() => this.callbacks.onElementDetected(null), 6000);
@@ -281,6 +289,7 @@ export class CompanionManager {
           console.error('Claude API error:', err);
           analytics.trackResponseError(err.message);
           this.setVoiceState('idle');
+          this.isProcessing = false;
         },
       },
     );
