@@ -222,12 +222,13 @@ function togglePanel(trayBounds?: Electron.Rectangle): void {
     panelWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
-  // Position below tray icon
-  if (trayBounds) {
-    const panelBounds = panelWindow.getBounds();
-    const x = Math.round(trayBounds.x + trayBounds.width / 2 - panelBounds.width / 2);
-    const y = trayBounds.y + trayBounds.height + 4;
-    console.log('[Flicky] Positioning panel at:', x, y);
+  // Center on primary display work area
+  {
+    const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
+    const pb = panelWindow.getBounds();
+    const x = Math.round((sw - pb.width) / 2);
+    const y = Math.round((sh - pb.height) / 2);
+    console.log('[Flicky] Centering panel at:', x, y);
     panelWindow.setPosition(x, y, false);
   }
 
