@@ -1,11 +1,15 @@
 /* ── Panel Window Styles ─────────────────────────────────────────────── */
 
+/* Fill the Electron window; header + footer are fixed, body scrolls */
 .panel-container {
   width: 340px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-base);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xl);
-  overflow: hidden;
+  overflow: hidden;          /* keeps border-radius clip on header/footer */
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
@@ -59,10 +63,27 @@
 /* ── Content Sections ───────────────────────────────────────────────── */
 
 .panel-body {
+  flex: 1;
+  min-height: 0;             /* required for flex child to scroll */
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: var(--space-lg);
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
+}
+
+.panel-body::-webkit-scrollbar {
+  width: 3px;
+}
+
+.panel-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-body::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 2px;
 }
 
 .section-label {
@@ -249,28 +270,156 @@
   color: var(--accent);
 }
 
-/* ── Voice Select ───────────────────────────────────────────────────── */
+/* ── Voice Picker ───────────────────────────────────────────────────── */
 
-.voice-select {
-  width: 100%;
-  padding: var(--space-sm) var(--space-md);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-raised);
-  color: var(--text-primary);
-  font-size: 12px;
-  font-family: var(--font-sans);
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right var(--space-md) center;
-  padding-right: calc(var(--space-md) * 2 + 10px);
+/* ── Voice section header (label + test button on one row) ──────────── */
+
+.voice-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-xs);
 }
 
-.voice-select:focus {
-  outline: none;
+/* Override section-label margin when it lives inside the header row */
+.voice-section-header .section-label {
+  margin-bottom: 0;
+}
+
+.voice-test-btn {
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+  min-width: 40px;
+  text-align: center;
+}
+
+.voice-test-btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.voice-test-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.voice-test-btn.ok {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.voice-test-btn.error {
+  border-color: var(--destructive);
+  color: var(--destructive);
+}
+
+/* ── Voice Picker ───────────────────────────────────────────────────── */
+
+.voice-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-height: 186px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+}
+
+.voice-picker::-webkit-scrollbar {
+  width: 3px;
+}
+
+.voice-picker::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.voice-picker::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 2px;
+}
+
+.voice-tier-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.voice-tier-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Colored glow dot — tier indicator (color/shadow set inline per tier) */
+.voice-tier-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.voice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.voice-card {
+  padding: 6px var(--space-xs);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+  font-family: var(--font-sans);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.voice-card:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+/* Selected — same accent treatment regardless of tier for consistency */
+.voice-card.active {
+  background: var(--accent-muted);
   border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Premium selected — amber tint */
+.voice-card.premium.active {
+  background: rgba(245, 158, 11, 0.10);
+  border-color: #F59E0B;
+  color: #F59E0B;
+}
+
+/* Paid selected — purple tint */
+.voice-card.paid.active {
+  background: rgba(168, 85, 247, 0.10);
+  border-color: #a855f7;
+  color: #a855f7;
 }
 
 /* ── Shortcut Display ───────────────────────────────────────────────── */

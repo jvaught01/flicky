@@ -23,7 +23,7 @@ function loadPage(win: BrowserWindow, page: string): void {
 export function createPanelWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 340,
-    height: 520,
+    height: 580,
     show: false,
     frame: false,
     resizable: false,

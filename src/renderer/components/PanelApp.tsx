@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { VoiceState, FlickySettings, ClaudeModel, GroqTranscriptionModel, ApiKeyName } from '../../shared/types';
-import { ELEVENLABS_VOICES } from '../../shared/types';
+import { ELEVENLABS_VOICES, type VoiceTier } from '../../shared/types';
 
 const STATUS_LABELS: Record<VoiceState, string> = {
   idle: 'Ready',
@@ -120,18 +120,11 @@ export function PanelApp() {
         {/* ElevenLabs Voice Picker */}
         {settings.apiKeyStatus.elevenlabs && (
           <div>
-            <div className="section-label">Voice</div>
-            <select
-              className="voice-select"
-              value={settings.selectedVoiceId}
-              onChange={(e) => window.flicky.setVoice(e.target.value)}
-            >
-              {ELEVENLABS_VOICES.map((v) => (
-                <option key={v.voiceId} value={v.voiceId}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
+            <div className="voice-section-header">
+              <div className="section-label">Voice</div>
+              <TtsTestButton />
+            </div>
+            <VoicePicker selectedVoiceId={settings.selectedVoiceId} />
           </div>
         )}
 
@@ -204,7 +197,6 @@ function ApiKeyRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState('');
-  const [ttsStatus, setTtsStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
 
   const handleSave = () => {
     if (value.trim()) {
@@ -216,7 +208,6 @@ function ApiKeyRow({
 
   const handleDelete = () => {
     window.flicky.deleteApiKey(name);
-    setTtsStatus('idle');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -225,13 +216,6 @@ function ApiKeyRow({
       setValue('');
       setEditing(false);
     }
-  };
-
-  const handleTestTts = async () => {
-    setTtsStatus('testing');
-    const result = await window.flicky.testTts();
-    setTtsStatus(result.ok ? 'ok' : 'error');
-    setTimeout(() => setTtsStatus('idle'), 4000);
   };
 
   return (
@@ -244,15 +228,6 @@ function ApiKeyRow({
         {isSet ? (
           <div className="api-key-actions">
             <span className="permission-badge granted">Saved</span>
-            {name === 'elevenlabs' && (
-              <button
-                className="api-key-action-btn"
-                onClick={handleTestTts}
-                disabled={ttsStatus === 'testing'}
-              >
-                {ttsStatus === 'testing' ? '...' : ttsStatus === 'ok' ? 'OK' : ttsStatus === 'error' ? 'Failed' : 'Test'}
-              </button>
-            )}
             <button className="api-key-action-btn" onClick={() => setEditing(true)}>
               Change
             </button>
@@ -345,5 +320,85 @@ function GroqModelButton({
     <button className={`model-btn ${active ? 'active' : ''}`} onClick={onClick}>
       {label}
     </button>
+  );
+}
+
+// ── TtsTestButton ──────────────────────────────────────────────────────
+
+function TtsTestButton() {
+  const [status, setStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
+
+  const handleTest = async () => {
+    setStatus('testing');
+    const result = await window.flicky.testTts();
+    setStatus(result.ok ? 'ok' : 'error');
+    setTimeout(() => setStatus('idle'), 4000);
+  };
+
+  const label =
+    status === 'testing' ? '...'
+    : status === 'ok'    ? 'OK'
+    : status === 'error' ? 'Failed'
+    : 'Test';
+
+  return (
+    <button
+      className={`voice-test-btn${status !== 'idle' && status !== 'testing' ? ` ${status}` : ''}`}
+      onClick={handleTest}
+      disabled={status === 'testing'}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ── VoicePicker ────────────────────────────────────────────────────────
+// Card grid with Premium / Standard / Paid sections. Panel body scrolls.
+
+const TIER_CONFIG: Record<VoiceTier, { label: string; dotColor: string | null }> = {
+  premium:  { label: 'Premium',  dotColor: '#F59E0B' },
+  standard: { label: 'Standard', dotColor: null       },
+  paid:     { label: 'Paid',     dotColor: '#a855f7'  },
+};
+
+const TIER_ORDER: VoiceTier[] = ['premium', 'standard', 'paid'];
+
+function VoicePicker({ selectedVoiceId }: { selectedVoiceId: string }) {
+  return (
+    <div className="voice-picker">
+      {TIER_ORDER.map((tier) => {
+        const voices = ELEVENLABS_VOICES.filter((v) => v.tier === tier);
+        if (voices.length === 0) return null;
+        const cfg = TIER_CONFIG[tier];
+        return (
+          <div key={tier} className="voice-tier-group">
+            <div className="voice-tier-label">
+              {cfg.dotColor && (
+                <span
+                  className="voice-tier-dot"
+                  style={{
+                    background: cfg.dotColor,
+                    boxShadow: `0 0 5px ${cfg.dotColor}88`,
+                  }}
+                />
+              )}
+              {cfg.label}
+            </div>
+            <div className="voice-grid">
+              {voices.map((v) => (
+                <button
+                  key={v.voiceId}
+                  className={`voice-card${selectedVoiceId === v.voiceId ? ' active' : ''} ${tier}`}
+                  onClick={() => window.flicky.setVoice(v.voiceId)}
+                  title={v.name}
+                >
+                  {v.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
