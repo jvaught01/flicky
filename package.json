@@ -14,7 +14,7 @@
     "build:renderer": "vite build",
     "start": "electron dist/main/main/index.js",
     "lint": "eslint src --ext .ts,.tsx",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "package": "npm run build && electron-builder",
     "package:win": "npm run build && electron-builder --win",
     "package:mac": "npm run build && electron-builder --mac",
