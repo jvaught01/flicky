@@ -61,6 +61,13 @@ export class CompanionManager {
    */
   private turnId = 0;
   private currentAbort: AbortController | null = null;
+  /**
+   * If startRecording is in flight, other callers (typically a quick-release
+   * stopPushToTalk) await this before deciding whether to stop. Without it,
+   * stop can fire before `isRecording` has been flipped true, bail, and
+   * leave the mic running forever.
+   */
+  private pendingStart: Promise<void> | null = null;
 
   constructor(callbacks: CompanionCallbacks) {
     this.callbacks = callbacks;
@@ -280,11 +287,23 @@ export class CompanionManager {
   }
 
   async startPushToTalk(): Promise<void> {
-    if (this.isRecording) return;
-    await this.startRecording();
+    if (this.isRecording || this.pendingStart) return;
+    const p = this.startRecording();
+    this.pendingStart = p;
+    try {
+      await p;
+    } finally {
+      if (this.pendingStart === p) this.pendingStart = null;
+    }
   }
 
   async stopPushToTalk(): Promise<void> {
+    // If a start is still in flight, let it finish so isRecording flips
+    // true before we decide whether to stop. Otherwise a quick press/release
+    // can race past the start and leak a live mic.
+    if (this.pendingStart) {
+      try { await this.pendingStart; } catch { /* surfaced inside startRecording */ }
+    }
     if (!this.isRecording) return;
     await this.stopRecordingAndProcess();
   }

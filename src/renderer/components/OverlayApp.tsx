@@ -37,6 +37,10 @@ export function OverlayApp() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const scriptNodeRef = useRef<ScriptProcessorNode | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  /** true while getUserMedia hasn't resolved yet. */
+  const micStartingRef = useRef(false);
+  /** set by stopMic so a pending start can abort before attaching. */
+  const micStopRequestedRef = useRef(false);
 
   // ── TTS playback (cancelable) ───────────────────────────────────────
   const ttsRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
@@ -53,10 +57,22 @@ export function OverlayApp() {
 
   useEffect(() => {
     const startMic = async () => {
+      // Ignore overlapping starts.
+      if (micStartingRef.current || mediaStreamRef.current) return;
+      micStartingRef.current = true;
+      micStopRequestedRef.current = false;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true },
         });
+
+        // A stop may have arrived before getUserMedia resolved; if so,
+        // release the stream immediately instead of attaching it.
+        if (micStopRequestedRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
         mediaStreamRef.current = stream;
 
         const ctx = new AudioContext({ sampleRate: 16000 });
@@ -80,10 +96,14 @@ export function OverlayApp() {
         processor.connect(ctx.destination);
       } catch (err) {
         console.error('[Flicky] Mic capture failed:', err);
+      } finally {
+        micStartingRef.current = false;
       }
     };
 
     const stopMic = () => {
+      // Flag for any in-flight startMic to bail before it attaches.
+      micStopRequestedRef.current = true;
       scriptNodeRef.current?.disconnect();
       scriptNodeRef.current = null;
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
