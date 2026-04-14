@@ -18,12 +18,6 @@ const MODELS: Array<{
     sub: 'fast · multilingual',
     tag: { label: 'default', cls: 'info' },
   },
-  {
-    id: 'distil-whisper-large-v3-en',
-    name: 'Distil Whisper English',
-    sub: 'fastest · english only',
-    tag: { label: 'fastest', cls: 'free' },
-  },
 ];
 
 export function EarTab({ settings }: EarTabProps) {

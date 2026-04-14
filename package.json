@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "description": "Cross-platform AI companion — voice-driven, screen-aware assistant with a pointing cursor overlay",
   "main": "dist/main/main/index.js",
-  "author": "Flicky Contributors",
+  "author": {
+    "name": "Flicky Contributors",
+    "email": "noreply@flicky.app"
+  },
   "license": "MIT",
   "scripts": {
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
@@ -14,7 +17,7 @@
     "build:renderer": "vite build",
     "start": "electron dist/main/main/index.js",
     "lint": "eslint src --ext .ts,.tsx",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "package": "npm run build && electron-builder",
     "package:win": "npm run build && electron-builder --win",
     "package:mac": "npm run build && electron-builder --mac",
@@ -58,8 +61,8 @@
       "category": "public.app-category.productivity",
       "icon": "assets/icon.icns",
       "target": [
-        { "target": "dmg", "arch": ["universal"] },
-        { "target": "zip", "arch": ["universal"] }
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
       ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
@@ -83,13 +86,13 @@
       "createStartMenuShortcut": true
     },
     "linux": {
-      "icon": "assets/icon.png",
+      "icon": "assets/icons",
       "target": ["AppImage", "deb"],
       "category": "Utility"
     },
     "publish": {
       "provider": "github",
-      "owner": "your-org",
+      "owner": "jvaught01",
       "repo": "flicky"
     }
   }

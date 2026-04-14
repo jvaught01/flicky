@@ -13,8 +13,7 @@ export type TranscriptionProviderType = 'groq' | 'openai' | 'native';
 
 export type GroqTranscriptionModel =
   | 'whisper-large-v3'
-  | 'whisper-large-v3-turbo'
-  | 'distil-whisper-large-v3-en';
+  | 'whisper-large-v3-turbo';
 
 export interface TranscriptionResult {
   text: string;

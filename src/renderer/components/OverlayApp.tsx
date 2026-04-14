@@ -2,6 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { VoiceState, DetectedElement } from '../../shared/types';
 import { Waveform } from './Waveform';
 
+// Offset the companion cursor ~1/5 inch (≈19px at 96dpi) down-right
+// of the real mouse so the tip doesn't sit directly on top of it.
+const FOLLOW_OFFSET_X = 14;
+const FOLLOW_OFFSET_Y = 8;
+
 const POINTING_PHRASES = [
   'right here!',
   'found it!',
@@ -156,7 +161,8 @@ export function OverlayApp() {
     setCursorModeSync('returning');
 
     const animate = () => {
-      const target = cursorPosRef.current;
+      const raw = cursorPosRef.current;
+      const target = { x: raw.x + FOLLOW_OFFSET_X, y: raw.y + FOLLOW_OFFSET_Y };
       const current = companionPosRef.current;
       const dx = target.x - current.x;
       const dy = target.y - current.y;
@@ -178,7 +184,12 @@ export function OverlayApp() {
   }, [setCursorModeSync, setCompanionPosSync]);
 
   useEffect(() => {
-    if (cursorMode === 'following') setCompanionPosSync(cursorPos);
+    if (cursorMode === 'following') {
+      setCompanionPosSync({
+        x: cursorPos.x + FOLLOW_OFFSET_X,
+        y: cursorPos.y + FOLLOW_OFFSET_Y,
+      });
+    }
     cursorPosRef.current = cursorPos;
   }, [cursorPos, cursorMode, setCompanionPosSync]);
 
