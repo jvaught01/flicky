@@ -86,7 +86,7 @@
       "createStartMenuShortcut": true
     },
     "linux": {
-      "icon": "assets/icon.png",
+      "icon": "assets/icons",
       "target": ["AppImage", "deb"],
       "category": "Utility"
     },

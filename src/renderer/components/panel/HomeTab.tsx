@@ -37,6 +37,8 @@ export function HomeTab({ voiceState, settings, memory, onNavigate }: HomeTabPro
 
   const pct = memory ? Math.round((memory.tokens / memory.tokenBudget) * 100) : 0;
 
+  const shortcutKeys = settings.pushToTalkShortcut.split('+').filter(Boolean);
+
   return (
     <>
       <h1 className="main-h1">
@@ -53,9 +55,11 @@ export function HomeTab({ voiceState, settings, memory, onNavigate }: HomeTabPro
           <Waveform state={ready ? voiceState : 'idle'} bars={23} height={72} />
           {ready ? (
             <div className="home-ptt">
-              hold <kbd>Ctrl</kbd>
-              <kbd>Alt</kbd>
-              <kbd>X</kbd> to talk
+              hold{' '}
+              {shortcutKeys.map((k, i) => (
+                <kbd key={`${k}-${i}`}>{k}</kbd>
+              ))}{' '}
+              to talk
             </div>
           ) : (
             <div className="home-ptt blocked">add the missing key to start talking</div>
