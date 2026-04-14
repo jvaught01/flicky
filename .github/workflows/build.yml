@@ -30,6 +30,11 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
+    env:
+      # Expose secret presence as a plain env var so `if:` expressions
+      # can gate on it (secrets themselves can't be used in `if`).
+      HAS_MAC_SIGNING: ${{ secrets.CSC_LINK != '' }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -39,6 +44,21 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      # Import the Developer ID Application certificate into a fresh
+      # keychain so electron-builder can find a valid signing identity.
+      # Skipped on non-mac runners and on mac runs without a CSC_LINK
+      # secret (e.g. forks / PRs) so those keep producing unsigned builds.
+      - name: Import signing certificate (macOS)
+        if: matrix.platform == 'mac' && env.HAS_MAC_SIGNING == 'true'
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.CSC_LINK }}
+          p12-password: ${{ secrets.CSC_KEY_PASSWORD }}
+
+      - name: Probe signing identities (macOS)
+        if: matrix.platform == 'mac'
+        run: security find-identity -v -p codesigning || true
 
       - name: Typecheck
         run: bun run typecheck
@@ -60,14 +80,15 @@ jobs:
         run: bunx electron-builder --${{ matrix.platform }} --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ matrix.platform == 'mac' && secrets.CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.CSC_KEY_PASSWORD || '' }}
-          APPLE_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_ID || '' }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.platform == 'mac' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_TEAM_ID || '' }}
-          # When no signing cert is available, disable auto-discovery so
-          # electron-builder doesn't try to match an ad-hoc identity.
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.platform == 'mac' && secrets.CSC_LINK != '' && 'true' || 'false' }}
+          # Notarization credentials — @electron/notarize picks these up
+          # automatically when mac.notarize is true in electron-builder.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # If there's no signing cert available (fork / no secrets),
+          # disable auto-discovery so electron-builder doesn't try to
+          # match an ad-hoc identity and explode on notarize.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.HAS_MAC_SIGNING }}
 
       - name: Upload artifacts
         if: success()
