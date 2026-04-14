@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { VoiceState, DetectedElement } from '../../shared/types';
 import { Waveform } from './Waveform';
+import { CursorCompanion } from './CursorCompanion';
 
 const POINTING_PHRASES = [
   'right here!',
@@ -37,6 +38,8 @@ export function OverlayApp() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const scriptNodeRef = useRef<ScriptProcessorNode | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  /** AnalyserNode for CursorCompanion audio-reactive rendering. */
+  const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
   /** true while getUserMedia hasn't resolved yet. */
   const micStartingRef = useRef(false);
   /** set by stopMic so a pending start can abort before attaching. */
@@ -79,6 +82,13 @@ export function OverlayApp() {
         audioCtxRef.current = ctx;
         const source = ctx.createMediaStreamSource(stream);
 
+        // AnalyserNode feeds CursorCompanion audio-reactive rendering
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.7;
+        source.connect(analyser);
+        setAnalyserNode(analyser);
+
         const processor = ctx.createScriptProcessor(4096, 1, 1);
         scriptNodeRef.current = processor;
 
@@ -110,6 +120,7 @@ export function OverlayApp() {
       mediaStreamRef.current = null;
       audioCtxRef.current?.close();
       audioCtxRef.current = null;
+      setAnalyserNode(null);
     };
 
     const unsubStart = window.flicky.onStartCapture(() => startMic());
@@ -284,40 +295,12 @@ export function OverlayApp() {
               transition: cursorTransition,
             }}
           >
-            <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="fl-front" x1="10%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#e0f2fe" />
-                  <stop offset="50%" stopColor="#7dd3fc" />
-                  <stop offset="100%" stopColor="#2563eb" />
-                </linearGradient>
-              </defs>
-
-              {/* Single glossy triangle — tip at upper-left, body trails down-right */}
-              <polygon
-                points="4,4 34,14 14,32"
-                fill="url(#fl-front)"
-                stroke="url(#fl-front)"
-                strokeWidth="3"
-                strokeLinejoin="round"
-              />
-
-              {/* Upper edge gloss highlight */}
-              <polyline
-                points="4,4 34,14"
-                fill="none"
-                stroke="rgba(255,255,255,0.65)"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-              <polyline
-                points="4,4 14,32"
-                fill="none"
-                stroke="rgba(255,255,255,0.4)"
-                strokeWidth="1"
-                strokeLinecap="round"
-              />
-            </svg>
+            <CursorCompanion
+              voiceState={voiceState}
+              isNavigating={isNavigating}
+              isHolding={isHolding}
+              analyserNode={analyserNode}
+            />
           </div>
 
           {voiceState === 'listening' && (

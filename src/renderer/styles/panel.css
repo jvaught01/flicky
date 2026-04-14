@@ -474,12 +474,37 @@ button.provider-pick:hover {
 .vpreview-sub { font-size: 11.5px; color: var(--fl-muted); margin-top: 2px; }
 
 .voice-list {
-  display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
-  margin-top: 10px; padding: 8px;
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 10px; padding: 10px;
   background: var(--fl-surface-2);
   border: 1px solid var(--fl-border);
   border-radius: 12px;
+  max-height: 260px; overflow-y: auto; overflow-x: hidden;
 }
+
+/* ── Tier group ─────────────────────────────────────────────────────── */
+.voice-tier-group { display: flex; flex-direction: column; gap: 4px; }
+
+.voice-tier-label {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--fl-muted);
+  padding: 2px 2px 0;
+}
+.voice-tier-label::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.voice-tier-label.premium::before  { background: #f59e0b; }
+.voice-tier-label.standard::before { display: none; }
+.voice-tier-label.paid::before     { background: #a855f7; }
+
+.voice-tier-voices {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px;
+}
+
+/* ── Voice card ─────────────────────────────────────────────────────── */
 .voice-list .voice-item {
   display: flex; flex-direction: column; gap: 2px;
   padding: 10px 12px; border-radius: 10px; cursor: pointer;
@@ -493,6 +518,18 @@ button.provider-pick:hover {
 }
 .voice-list .voice-item .nm { font-size: 13px; font-weight: 600; color: var(--fl-ink); }
 .voice-list .voice-item .sub { font-size: 11px; color: var(--fl-muted); }
+
+/* ── Tier badge in vpreview ─────────────────────────────────────────── */
+.voice-tier-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+.voice-tier-badge.premium { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.voice-tier-badge.paid    { background: rgba(168,85,247,0.15);  color: #a855f7; }
 
 /* ── Shortcut editor ────────────────────────────────────────────── */
 .shortcut-edit {
@@ -717,6 +754,51 @@ button.provider-pick:hover {
   margin-bottom: 24px;
 }
 .chats-head > div { flex: 1; }
+
+.chats-actions {
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+/* ── Export dropdown ─────────────────────────────────────────────── */
+.export-dropdown-wrap {
+  position: relative;
+}
+
+.export-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 200;
+  min-width: 196px;
+  background: var(--fl-surface);
+  border: 1px solid var(--fl-border-strong);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45);
+}
+
+.export-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 12px;
+  border-radius: 7px;
+  background: transparent; border: none;
+  color: var(--fl-ink-soft);
+  font-size: 13px; font-family: inherit;
+  text-align: left; cursor: pointer;
+  transition: background .1s ease, color .1s ease;
+}
+.export-item:hover {
+  background: var(--fl-surface-2);
+  color: var(--fl-ink);
+}
+.export-icon {
+  font-size: 14px; line-height: 1;
+  width: 18px; text-align: center;
+  flex-shrink: 0;
+  opacity: .7;
+}
 
 .chat-log {
   background: var(--fl-surface);

@@ -1,5 +1,6 @@
-import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, shell, nativeImage } from 'electron';
+import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, shell, nativeImage, dialog } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { CompanionManager } from './companion-manager';
 import { createPanelWindow, createOverlayWindow } from './windows';
 import { IPC } from '../shared/types';
@@ -204,6 +205,30 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC.GET_MEMORY_STATS, () => companion.getMemoryStats());
   ipcMain.handle(IPC.GET_CHAT_HISTORY, () => companion.getChatHistory());
   ipcMain.on(IPC.CLEAR_CHAT_HISTORY, () => companion.clearChatHistory());
+
+  // ── Chat export — PDF ──────────────────────────────────────────────
+  ipcMain.handle(IPC.EXPORT_CHAT_PDF, async (_e, html: string) => {
+    const result = await dialog.showSaveDialog({
+      title: 'Save Chat History',
+      defaultPath: `flicky-chat-${new Date().toISOString().slice(0, 10)}.pdf`,
+      filters: [{ name: 'PDF Document', extensions: ['pdf'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false };
+
+    // Render HTML in a hidden window and export as PDF
+    const win = new BrowserWindow({ show: false, webPreferences: { javascript: false } });
+    try {
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+      const pdfBuffer = await win.webContents.printToPDF({ printBackground: true });
+      fs.writeFileSync(result.filePath, pdfBuffer);
+      return { ok: true };
+    } catch (err) {
+      console.error('[Flicky] PDF export failed:', err);
+      return { ok: false, error: String(err) };
+    } finally {
+      win.close();
+    }
+  });
 
   // API Key Management
   ipcMain.on(IPC.SET_API_KEY, (_e, name, value) => companion.setApiKey(name, value));

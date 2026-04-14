@@ -7,3 +7,7 @@ release/
 Thumbs.db
 *.log
 bun.lock
+
+# Local-only files — never commit
+CLAUDE.md
+.changelog/

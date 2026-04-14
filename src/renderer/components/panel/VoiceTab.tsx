@@ -8,6 +8,11 @@ interface VoiceTabProps {
   settings: FlickySettings;
 }
 
+const TIERS: { key: 'standard' | 'paid'; label: string }[] = [
+  { key: 'standard', label: 'Standard' },
+  { key: 'paid',     label: 'Paid Library · subscription required' },
+];
+
 export function VoiceTab({ settings }: VoiceTabProps) {
   const [voicePickerOpen, setVoicePickerOpen] = useState(false);
   const selectedVoice = VOICE_PRESETS.find((v) => v.id === settings.voiceId) ?? VOICE_PRESETS[0];
@@ -43,7 +48,12 @@ export function VoiceTab({ settings }: VoiceTabProps) {
             ▶
           </button>
           <div className="vpreview-meta">
-            <div className="vpreview-name">{selectedVoice.name}</div>
+            <div className="vpreview-name">
+              {selectedVoice.name}
+              {selectedVoice.tier === 'paid' && (
+                <span className="voice-tier-badge paid">Paid</span>
+              )}
+            </div>
             <div className="vpreview-sub">{selectedVoice.description}</div>
           </div>
           <button className="btn xs" onClick={() => setVoicePickerOpen((x) => !x)}>
@@ -53,19 +63,30 @@ export function VoiceTab({ settings }: VoiceTabProps) {
 
         {voicePickerOpen && (
           <div className="voice-list">
-            {VOICE_PRESETS.map((v) => (
-              <button
-                key={v.id}
-                className={`voice-item ${v.id === settings.voiceId ? 'on' : ''}`}
-                onClick={() => {
-                  window.flicky.setVoiceId(v.id);
-                  setVoicePickerOpen(false);
-                }}
-              >
-                <div className="nm">{v.name}</div>
-                <div className="sub">{v.description}</div>
-              </button>
-            ))}
+            {TIERS.map(({ key, label }) => {
+              const voices = VOICE_PRESETS.filter((v) => (v.tier ?? 'standard') === key);
+              if (!voices.length) return null;
+              return (
+                <div key={key} className="voice-tier-group">
+                  <div className={`voice-tier-label ${key}`}>{label}</div>
+                  <div className="voice-tier-voices">
+                    {voices.map((v) => (
+                      <button
+                        key={v.id}
+                        className={`voice-item ${v.id === settings.voiceId ? 'on' : ''}`}
+                        onClick={() => {
+                          window.flicky.setVoiceId(v.id);
+                          setVoicePickerOpen(false);
+                        }}
+                      >
+                        <div className="nm">{v.name}</div>
+                        <div className="sub">{v.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

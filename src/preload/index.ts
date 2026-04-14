@@ -60,6 +60,8 @@ const api = {
   // ── Chat history ────────────────────────────────────────────────────
   getChatHistory: (): Promise<ChatEntry[]> => ipcRenderer.invoke(IPC.GET_CHAT_HISTORY),
   clearChatHistory: (): void => ipcRenderer.send(IPC.CLEAR_CHAT_HISTORY),
+  exportChatPdf: (html: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.EXPORT_CHAT_PDF, html),
 
   // ── Lifecycle ──────────────────────────────────────────────────────
   openExternal: (url: string): void => ipcRenderer.send(IPC.OPEN_EXTERNAL, url),

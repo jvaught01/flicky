@@ -79,16 +79,44 @@ export interface VoicePreset {
   id: string;
   name: string;
   description: string;
+  /** Subscription tier required. Defaults to 'standard' when absent. */
+  tier?: 'premium' | 'standard' | 'paid';
 }
 
+/**
+ * ElevenLabs voice catalogue.
+ * Standard = premade voices, confirmed free-tier accessible (source: voices.md).
+ * Paid     = voice library voices requiring an ElevenLabs paid subscription.
+ */
 export const VOICE_PRESETS: VoicePreset[] = [
-  { id: 'Fahco4VZzobUeiPqni1S', name: 'Tom', description: 'custom · en-US' },
-  { id: 'pMsXgVXv3BLzUgSXRplE', name: 'Serena', description: 'warm · conversational · en-US' },
-  { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', description: 'calm · narrator · en-US' },
-  { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi', description: 'strong · confident · en-US' },
-  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella', description: 'soft · friendly · en-US' },
-  { id: 'ErXwobaYiN019PkySvjV', name: 'Antoni', description: 'well-rounded · en-US' },
-  { id: 'VR6AewLTigWG4xSOukaG', name: 'Arnold', description: 'crisp · narration · en-US' },
+  // ── Standard — premade, free tier ────────────────────────────────────────
+  { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam',    description: 'dominant · firm · en-US',              tier: 'standard' },
+  { id: 'Xb7hH8MSUJpSbSDYk0k2', name: 'Alice',   description: 'clear · engaging · en-US',             tier: 'standard' },
+  { id: 'hpp4J3VqNfWAUOO0d1Us', name: 'Bella',   description: 'professional · bright · warm · en-US', tier: 'standard' },
+  { id: 'pqHfZKP75CvOlQylNhV4', name: 'Bill',    description: 'wise · mature · balanced · en-US',     tier: 'standard' },
+  { id: 'nPczCjzI2devNBz1zQrb', name: 'Brian',   description: 'deep · resonant · comforting · en-US', tier: 'standard' },
+  { id: 'N2lVS1w4EtoT3dr4eOWO', name: 'Callum',  description: 'husky · trickster · en-US',            tier: 'standard' },
+  { id: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', description: 'deep · confident · energetic · en-US', tier: 'standard' },
+  { id: 'iP95p4xoKVk53GoZ742B', name: 'Chris',   description: 'charming · down-to-earth · en-US',     tier: 'standard' },
+  { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel',  description: 'steady · broadcaster · en-US',         tier: 'standard' },
+  { id: 'cjVigY5qzO86Huf0OWal', name: 'Eric',    description: 'smooth · trustworthy · en-US',         tier: 'standard' },
+  { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George',  description: 'warm · captivating · en-US',           tier: 'standard' },
+  { id: 'SOYHLrjzK2X1ezoPC6cr', name: 'Harry',   description: 'fierce · warrior · en-US',             tier: 'standard' },
+  { id: 'cgSgspJ2msm6clMCkdW9', name: 'Jessica', description: 'playful · bright · warm · en-US',      tier: 'standard' },
+  { id: 'FGY2WhTYpPnrIDTdsKH5', name: 'Laura',   description: 'enthusiastic · quirky · en-US',        tier: 'standard' },
+  { id: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam',    description: 'energetic · social · en-US',           tier: 'standard' },
+  { id: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily',    description: 'velvety · actress · en-US',            tier: 'standard' },
+  { id: 'XrExE9yKIg1WjnnlVkGX', name: 'Matilda', description: 'knowledgeable · professional · en-US', tier: 'standard' },
+  { id: 'SAz9YHcvj6GT2YYXdXww', name: 'River',   description: 'relaxed · neutral · en-US',            tier: 'standard' },
+  { id: 'CwhRBWXzGAHq8TQ4Fs17', name: 'Roger',   description: 'laid-back · casual · resonant · en-US',tier: 'standard' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah',   description: 'mature · reassuring · confident · en-US', tier: 'standard' },
+  { id: 'bIHbv24MWmeRgasZH58o', name: 'Will',    description: 'relaxed · optimist · en-US',           tier: 'standard' },
+  // ── Paid — voice library, ElevenLabs subscription required ───────────────
+  { id: 'Fahco4VZzobUeiPqni1S', name: 'Tom',     description: 'custom · en-US',                       tier: 'paid' },
+  { id: 'pMsXgVXv3BLzUgSXRplE', name: 'Serena',  description: 'warm · conversational · en-US',        tier: 'paid' },
+  { id: 'TxGEqnHWrfWFTfGW9XjX', name: 'Josh',    description: 'young · narrative · en-US',            tier: 'paid' },
+  { id: 'yoZ06aMxZJJ28mfd3POQ', name: 'Sam',     description: 'raspy · narrative · en-US',            tier: 'paid' },
+  { id: 'MF3mGyEYCl7XYWbV9V6O', name: 'Elli',    description: 'emotional · young · en-US',            tier: 'paid' },
 ];
 
 // ── Chat History ───────────────────────────────────────────────────────
@@ -154,7 +182,7 @@ export const DEFAULT_SETTINGS: FlickySettings = {
   reasoningDepth: 'off',
   replyTone: 'friendly',
 
-  voiceId: 'pMsXgVXv3BLzUgSXRplE',
+  voiceId: 'cgSgspJ2msm6clMCkdW9',
   voiceSpeed: 1.0,
   voiceStability: 0.5,
   speakReplies: true,
@@ -215,6 +243,7 @@ export const IPC = {
   GET_MEMORY_STATS: 'get-memory-stats',
   GET_CHAT_HISTORY: 'get-chat-history',
   CLEAR_CHAT_HISTORY: 'clear-chat-history',
+  EXPORT_CHAT_PDF: 'export-chat-pdf',
   PLAY_VOICE_PREVIEW: 'play-voice-preview',
 
   // API Key Management

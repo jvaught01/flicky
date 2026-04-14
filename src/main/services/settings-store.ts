@@ -39,6 +39,27 @@ export interface StoredSettings {
   onboardingComplete: boolean;
 }
 
+/** Jessica — premade, free-tier, warm & conversational. */
+const DEFAULT_VOICE_ID = 'cgSgspJ2msm6clMCkdW9';
+
+/**
+ * Voice IDs that are no longer valid free-tier voices (old deprecated IDs or
+ * library voices requiring a paid ElevenLabs subscription). Any persisted
+ * setting using one of these will be migrated to DEFAULT_VOICE_ID on startup.
+ */
+const LEGACY_VOICE_IDS = new Set([
+  'pMsXgVXv3BLzUgSXRplE', // Serena  — library voice
+  'Fahco4VZzobUeiPqni1S', // Tom     — library voice
+  '21m00Tcm4TlvDq8ikWAM', // Rachel  — deprecated premade ID
+  'AZnzlk1XvdvUeBnXmlld', // Domi    — deprecated premade ID
+  'ErXwobaYiN019PkySvjV', // Antoni  — deprecated premade ID
+  'VR6AewLTigWG4xSOukaG', // Arnold  — deprecated premade ID
+  'TxGEqnHWrfWFTfGW9XjX', // Josh   — library voice
+  'yoZ06aMxZJJ28mfd3POQ', // Sam    — library voice
+  'MF3mGyEYCl7XYWbV9V6O', // Elli   — deprecated/library
+  'TX3LPaxmHKxFdv7VOFE1', // Liam   — wrong voice ID
+]);
+
 const DEFAULTS: StoredSettings = {
   mindProvider: 'anthropic',
   selectedModel: 'claude-sonnet-4-6',
@@ -46,7 +67,7 @@ const DEFAULTS: StoredSettings = {
   reasoningDepth: 'off',
   replyTone: 'friendly',
 
-  voiceId: 'pMsXgVXv3BLzUgSXRplE',
+  voiceId: DEFAULT_VOICE_ID,
   voiceSpeed: 1.0,
   voiceStability: 0.5,
   speakReplies: true,
@@ -66,12 +87,19 @@ function getFilePath(): string {
 }
 
 function read(): StoredSettings {
+  let data: StoredSettings;
   try {
     const raw = fs.readFileSync(getFilePath(), 'utf-8');
-    return { ...DEFAULTS, ...JSON.parse(raw) };
+    data = { ...DEFAULTS, ...JSON.parse(raw) };
   } catch {
-    return { ...DEFAULTS };
+    data = { ...DEFAULTS };
   }
+  // Migrate stale/library voice IDs that 402 on free-tier accounts.
+  if (LEGACY_VOICE_IDS.has(data.voiceId)) {
+    data.voiceId = DEFAULT_VOICE_ID;
+    write(data);
+  }
+  return data;
 }
 
 function write(data: StoredSettings): void {
