@@ -50,14 +50,24 @@ jobs:
         # Only auto-publish to GitHub Releases on tag pushes; otherwise
         # build the artifact and stop so PR / branch runs don't try to
         # upload to a non-existent draft release.
+        #
+        # Signing + notarization: if the CSC_LINK secret is set on the
+        # mac runner, electron-builder will sign with that cert and
+        # @electron/notarize will notarize using APPLE_ID / APPLE_APP_
+        # SPECIFIC_PASSWORD / APPLE_TEAM_ID. If the secret is absent the
+        # build falls back to the old unsigned behavior so forks and PRs
+        # without secrets still build.
         run: bunx electron-builder --${{ matrix.platform }} --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Skip macOS code signing in CI. CSC_LINK="" (empty but defined)
-          # confuses electron-builder into treating cwd as a cert file.
-          # When real signing secrets are added later, swap this for
-          # conditional CSC_LINK/CSC_KEY_PASSWORD/APPLE_* env vars.
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CSC_LINK: ${{ matrix.platform == 'mac' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.platform == 'mac' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.platform == 'mac' && secrets.APPLE_TEAM_ID || '' }}
+          # When no signing cert is available, disable auto-discovery so
+          # electron-builder doesn't try to match an ad-hoc identity.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.platform == 'mac' && secrets.CSC_LINK != '' && 'true' || 'false' }}
 
       - name: Upload artifacts
         if: success()
