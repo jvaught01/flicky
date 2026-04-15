@@ -25,30 +25,50 @@ app.on('before-quit', () => { isAppQuitting = true; });
 // ── Helpers ────────────────────────────────────────────────────────────
 
 function createTrayIcon(): Electron.NativeImage {
-  const iconPath = path.join(__dirname, '../../../assets/tray-icon.png');
+  // Resolve the icon relative to the built JS. In dev that's
+  // dist/main/main/ → ../../../assets; in a packaged app the same
+  // path resolves inside the asar bundle since assets/** is shipped.
+  const assetRoot = path.join(__dirname, '../../../assets');
+  const size32 = path.join(assetRoot, 'icons', '32x32.png');
+  const size16 = path.join(assetRoot, 'icons', '16x16.png');
+
+  const primary = process.platform === 'darwin' ? size32 : size16;
+
   try {
-    const img = nativeImage.createFromPath(iconPath);
-    if (!img.isEmpty()) return img.resize({ width: 18, height: 18 });
-  } catch {
-    // fallback below
-  }
-  // Generate a simple icon if the file doesn't exist
-  const size = 32;
-  const canvas = Buffer.alloc(size * size * 4);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const cx = size / 2, cy = size / 2, r = size / 2 - 2;
-      const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
-      const i = (y * size + x) * 4;
-      if (dist <= r) {
-        canvas[i] = 100;     // R
-        canvas[i + 1] = 149;  // G
-        canvas[i + 2] = 237;  // B
-        canvas[i + 3] = 255;  // A
+    const img = nativeImage.createFromPath(primary);
+    if (img.isEmpty()) throw new Error('empty tray icon image');
+
+    // On macOS attach a 2x representation so the tray icon stays
+    // crisp on Retina. On Windows/Linux resize to 16 for the tray.
+    if (process.platform === 'darwin') {
+      const hi = nativeImage.createFromPath(size32);
+      if (!hi.isEmpty()) {
+        img.addRepresentation({ scaleFactor: 2, buffer: hi.toPNG() });
+      }
+      return img.resize({ width: 16, height: 16 });
+    }
+    return img.resize({ width: 16, height: 16 });
+  } catch (err) {
+    console.error('[Flicky] tray icon load failed, using fallback:', err);
+    // Generated fallback — cornflower-blue filled circle so the tray
+    // entry is still clickable even if the PNGs are missing.
+    const size = 32;
+    const canvas = Buffer.alloc(size * size * 4);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const cx = size / 2, cy = size / 2, r = size / 2 - 2;
+        const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
+        const i = (y * size + x) * 4;
+        if (dist <= r) {
+          canvas[i] = 100;
+          canvas[i + 1] = 149;
+          canvas[i + 2] = 237;
+          canvas[i + 3] = 255;
+        }
       }
     }
+    return nativeImage.createFromBuffer(canvas, { width: size, height: size });
   }
-  return nativeImage.createFromBuffer(canvas, { width: size, height: size });
 }
 
 function sendToPanel(channel: string, ...args: unknown[]): void {
