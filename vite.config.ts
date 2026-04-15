@@ -17,6 +17,7 @@ export default defineConfig({
       input: {
         panel: path.resolve(__dirname, 'src/renderer/panel.html'),
         overlay: path.resolve(__dirname, 'src/renderer/overlay.html'),
+        stream: path.resolve(__dirname, 'src/renderer/stream.html'),
       },
     },
   },

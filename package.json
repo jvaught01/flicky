@@ -1,6 +1,6 @@
 {
   "name": "flicky",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Cross-platform AI companion — voice-driven, screen-aware assistant with a pointing cursor overlay",
   "main": "dist/main/main/index.js",
   "author": {

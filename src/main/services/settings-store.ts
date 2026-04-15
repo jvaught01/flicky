@@ -10,6 +10,8 @@ import type {
   TranscriptionProviderType,
   ReasoningDepth,
   ReplyTone,
+  StreamVisibility,
+  StreamWindowBounds,
 } from '../../shared/types';
 
 /**
@@ -35,6 +37,8 @@ export interface StoredSettings {
   isClickyCursorEnabled: boolean;
   launchAtLogin: boolean;
   pushToTalkShortcut: string;
+  streamVisibility: StreamVisibility;
+  streamWindowBounds: StreamWindowBounds | null;
 
   onboardingComplete: boolean;
 }
@@ -57,6 +61,8 @@ const DEFAULTS: StoredSettings = {
   isClickyCursorEnabled: true,
   launchAtLogin: false,
   pushToTalkShortcut: 'Ctrl+Alt+X',
+  streamVisibility: 'off',
+  streamWindowBounds: null,
 
   onboardingComplete: false,
 };

@@ -1,5 +1,6 @@
-import { app, BrowserWindow, Display } from 'electron';
+import { app, BrowserWindow, Display, screen } from 'electron';
 import path from 'path';
+import type { StreamWindowBounds } from '../shared/types';
 
 const isDev = !app.isPackaged && process.env.VITE_DEV_SERVER === '1';
 
@@ -100,4 +101,65 @@ export function createOverlayWindow(display: Display): BrowserWindow {
   });
 
   return win;
+}
+
+/**
+ * The transparent, draggable "stream" window that mirrors the live Q/A
+ * so the user can read, scroll, and copy. It's a frameless BrowserWindow
+ * with a CSS-drag region in the header; mouse events are enabled so
+ * scrolling and text selection work normally.
+ */
+export function createStreamWindow(
+  storedBounds: StreamWindowBounds | null,
+): BrowserWindow {
+  const bounds = storedBounds ?? defaultStreamBounds();
+
+  const win = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    minWidth: 280,
+    minHeight: 180,
+    show: false,
+    frame: false,
+    resizable: true,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    transparent: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    focusable: true,
+    title: 'Flicky Stream',
+    webPreferences: {
+      preload: getPreloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+
+  win.setAlwaysOnTop(true, 'floating');
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  loadPage(win, 'stream');
+  return win;
+}
+
+function defaultStreamBounds(): StreamWindowBounds {
+  const primary = screen.getPrimaryDisplay();
+  const { workArea } = primary;
+  const width = 380;
+  const height = 320;
+  // Anchor to the bottom-right corner of the primary work area with a
+  // small gutter, so on first launch users can find it easily.
+  return {
+    width,
+    height,
+    x: workArea.x + workArea.width - width - 24,
+    y: workArea.y + workArea.height - height - 24,
+  };
 }

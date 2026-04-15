@@ -1,8 +1,8 @@
 import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, shell, nativeImage } from 'electron';
 import path from 'path';
 import { CompanionManager } from './companion-manager';
-import { createPanelWindow, createOverlayWindow } from './windows';
-import { IPC } from '../shared/types';
+import { createPanelWindow, createOverlayWindow, createStreamWindow } from './windows';
+import { IPC, type StreamVisibility, type StreamWindowBounds } from '../shared/types';
 import { AUDIO_IPC } from './services/audio-capture';
 import * as chatHistory from './services/chat-history-store';
 
@@ -15,8 +15,10 @@ if (!gotLock) {
 let tray: Tray | null = null;
 let panelWindow: BrowserWindow | null = null;
 let overlayWindows: BrowserWindow[] = [];
+let streamWindow: BrowserWindow | null = null;
 let companion: CompanionManager;
 let isAppQuitting = false;
+let lastVoiceState = 'idle';
 
 app.on('before-quit', () => { isAppQuitting = true; });
 
@@ -63,9 +65,16 @@ function sendToOverlays(channel: string, ...args: unknown[]): void {
   }
 }
 
+function sendToStream(channel: string, ...args: unknown[]): void {
+  if (streamWindow && !streamWindow.isDestroyed()) {
+    streamWindow.webContents.send(channel, ...args);
+  }
+}
+
 function sendToAll(channel: string, ...args: unknown[]): void {
   sendToPanel(channel, ...args);
   sendToOverlays(channel, ...args);
+  sendToStream(channel, ...args);
 }
 
 // ── App Lifecycle ──────────────────────────────────────────────────────
@@ -73,10 +82,20 @@ function sendToAll(channel: string, ...args: unknown[]): void {
 app.whenReady().then(() => {
   // Initialize companion manager
   companion = new CompanionManager({
-    onVoiceStateChanged: (state) => sendToAll(IPC.VOICE_STATE_CHANGED, state),
+    onVoiceStateChanged: (state) => {
+      lastVoiceState = state;
+      sendToAll(IPC.VOICE_STATE_CHANGED, state);
+      updateStreamForVoiceState(state);
+    },
     onTranscriptUpdate: (result) => sendToAll(IPC.TRANSCRIPT_UPDATE, result),
-    onAiResponseChunk: (chunk) => sendToPanel(IPC.AI_RESPONSE_CHUNK, chunk),
-    onAiResponseComplete: (text) => sendToPanel(IPC.AI_RESPONSE_COMPLETE, text),
+    onAiResponseChunk: (chunk) => {
+      sendToPanel(IPC.AI_RESPONSE_CHUNK, chunk);
+      sendToStream(IPC.AI_RESPONSE_CHUNK, chunk);
+    },
+    onAiResponseComplete: (text) => {
+      sendToPanel(IPC.AI_RESPONSE_COMPLETE, text);
+      sendToStream(IPC.AI_RESPONSE_COMPLETE, text);
+    },
     onElementDetected: (el) => sendToOverlays(IPC.ELEMENT_DETECTED, el),
     onSettingsChanged: (s) => sendToPanel(IPC.SETTINGS_CHANGED, s),
     onMemoryStatsChanged: (stats) => sendToPanel(IPC.MEMORY_STATS, stats),
@@ -84,6 +103,8 @@ app.whenReady().then(() => {
     onStartAudioCapture: () => sendToOverlays(AUDIO_IPC.START_CAPTURE),
     onStopAudioCapture: () => sendToOverlays(AUDIO_IPC.STOP_CAPTURE),
     onPlayAudio: (buf) => sendToOverlays('play-audio', buf),
+    onCursorVisibilityChanged: (enabled) => applyOverlayVisibility(enabled),
+    onStreamVisibilityChanged: (v) => applyStreamVisibility(v),
   });
 
   // Create tray
@@ -107,6 +128,33 @@ app.whenReady().then(() => {
   rebuildOverlays();
   screen.on('display-added', rebuildOverlays);
   screen.on('display-removed', rebuildOverlays);
+
+  // Create the transparent stream window (hidden until the user opts in).
+  {
+    const settings = companion.getSettings();
+    streamWindow = createStreamWindow(settings.streamWindowBounds);
+    streamWindow.on('close', (e) => {
+      // Don't let the user actually close the stream — just hide it and
+      // flip the setting off so the toggle in General reflects reality.
+      if (!isAppQuitting) {
+        e.preventDefault();
+        streamWindow?.hide();
+        companion.setStreamVisibility('off');
+      }
+    });
+    streamWindow.on('moved', persistStreamBounds);
+    streamWindow.on('resized', persistStreamBounds);
+    applyStreamVisibility(settings.streamVisibility);
+  }
+
+  // Sync the OS login-item state with our stored preference. Handles
+  // the case where the user disables the login item externally (e.g.
+  // via System Settings) — next launch reconciles the two.
+  try {
+    app.setLoginItemSettings({ openAtLogin: companion.getSettings().launchAtLogin });
+  } catch (err) {
+    console.error('[Flicky] initial setLoginItemSettings failed:', err);
+  }
 
   // Register global push-to-talk shortcut.
   // globalShortcut fires repeatedly on key-repeat while held, so we
@@ -192,6 +240,9 @@ app.whenReady().then(() => {
   ipcMain.on(IPC.TOGGLE_CURSOR, (_e, enabled) => companion.toggleCursor(enabled));
   ipcMain.on(IPC.SET_LAUNCH_AT_LOGIN, (_e, enabled) => companion.setLaunchAtLogin(enabled));
   ipcMain.on(IPC.SET_PUSH_TO_TALK_SHORTCUT, (_e, accel: string) => companion.setPushToTalkShortcut(accel));
+  ipcMain.on(IPC.SET_STREAM_VISIBILITY, (_e, v: StreamVisibility) => companion.setStreamVisibility(v));
+  ipcMain.on(IPC.SET_STREAM_WINDOW_BOUNDS, (_e, b: StreamWindowBounds) => companion.setStreamWindowBounds(b));
+  ipcMain.on(IPC.CLEAR_STREAM, () => sendToStream(IPC.CLEAR_STREAM));
   ipcMain.on(IPC.REQUEST_PERMISSION, (_e, kind) => companion.requestPermission(kind));
   ipcMain.on(IPC.OPEN_EXTERNAL, (_e, url) => shell.openExternal(url));
   ipcMain.on(IPC.QUIT_APP, () => app.quit());
@@ -278,4 +329,59 @@ function rebuildOverlays(): void {
   }
 
   overlayWindows = screen.getAllDisplays().map((display) => createOverlayWindow(display));
+  // Respect the persisted "Show cursor" setting — if the user has it
+  // turned off, the overlays are created but hidden so we can still
+  // route voice-state / element-detected events into their renderers
+  // without a visible window on screen.
+  applyOverlayVisibility(companion.getSettings().isClickyCursorEnabled);
+}
+
+function applyOverlayVisibility(enabled: boolean): void {
+  for (const win of overlayWindows) {
+    if (win.isDestroyed()) continue;
+    if (enabled) {
+      win.showInactive();
+    } else {
+      win.hide();
+    }
+  }
+}
+
+/**
+ * Show or hide the stream window based on the current visibility
+ * setting. 'responses' mode is refined further by updateStreamForVoiceState
+ * which flicks it on when Flicky is thinking / speaking.
+ */
+function applyStreamVisibility(v: StreamVisibility): void {
+  if (!streamWindow || streamWindow.isDestroyed()) return;
+  if (v === 'always') {
+    streamWindow.showInactive();
+  } else if (v === 'off') {
+    streamWindow.hide();
+  } else {
+    // 'responses' — reconcile with whatever Flicky is currently doing
+    // so switching *into* this mode immediately reflects the real state
+    // (hide if idle, show if mid-turn) instead of waiting for the next
+    // voice state transition.
+    updateStreamForVoiceState(lastVoiceState);
+  }
+}
+
+function updateStreamForVoiceState(state: string): void {
+  if (!streamWindow || streamWindow.isDestroyed()) return;
+  const v = companion.getSettings().streamVisibility;
+  if (v !== 'responses') return;
+  const active = state === 'listening' || state === 'processing' || state === 'responding';
+  if (active) {
+    streamWindow.showInactive();
+  } else if (state === 'idle') {
+    streamWindow.hide();
+  }
+}
+
+function persistStreamBounds(): void {
+  if (!streamWindow || streamWindow.isDestroyed()) return;
+  const [x, y] = streamWindow.getPosition();
+  const [width, height] = streamWindow.getSize();
+  companion.setStreamWindowBounds({ x, y, width, height });
 }

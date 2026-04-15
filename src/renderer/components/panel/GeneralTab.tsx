@@ -165,6 +165,23 @@ export function GeneralTab({ settings, memory }: GeneralTabProps) {
             aria-label="Toggle launch at login"
           />
         </div>
+        <div className="row">
+          <div className="row-main">
+            <div className="row-t">Stream window</div>
+            <div className="row-s">floating transparent panel that shows the live Q/A — scroll, select, copy</div>
+          </div>
+          <div className="seg">
+            {(['off', 'responses', 'always'] as const).map((v) => (
+              <button
+                key={v}
+                className={settings.streamVisibility === v ? 'on' : ''}
+                onClick={() => window.flicky.setStreamVisibility(v)}
+              >
+                {v === 'responses' ? 'while replying' : v}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </>
   );

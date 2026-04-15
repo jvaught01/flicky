@@ -118,6 +118,15 @@ export interface MemoryStats {
 
 // ── Settings ───────────────────────────────────────────────────────────
 
+export type StreamVisibility = 'off' | 'responses' | 'always';
+
+export interface StreamWindowBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface FlickySettings {
   // Mind
   mindProvider: MindProvider;
@@ -140,6 +149,15 @@ export interface FlickySettings {
   isClickyCursorEnabled: boolean;
   launchAtLogin: boolean;
   pushToTalkShortcut: string;
+  /**
+   * Controls the transparent stream window:
+   * - 'off'       — never shown
+   * - 'responses' — shown only while Flicky is actively answering
+   * - 'always'    — shown continuously once the app starts
+   */
+  streamVisibility: StreamVisibility;
+  /** Last known position + size of the stream window; null = auto-place. */
+  streamWindowBounds: StreamWindowBounds | null;
 
   // Lifecycle
   onboardingComplete: boolean;
@@ -164,6 +182,8 @@ export const DEFAULT_SETTINGS: FlickySettings = {
   isClickyCursorEnabled: true,
   launchAtLogin: false,
   pushToTalkShortcut: 'Ctrl+Alt+X',
+  streamVisibility: 'off',
+  streamWindowBounds: null,
 
   onboardingComplete: false,
   apiKeyStatus: { anthropic: false, openai: false, elevenlabs: false, groq: false },
@@ -200,6 +220,9 @@ export const IPC = {
   TOGGLE_CURSOR: 'toggle-cursor',
   SET_LAUNCH_AT_LOGIN: 'set-launch-at-login',
   SET_PUSH_TO_TALK_SHORTCUT: 'set-push-to-talk-shortcut',
+  SET_STREAM_VISIBILITY: 'set-stream-visibility',
+  SET_STREAM_WINDOW_BOUNDS: 'set-stream-window-bounds',
+  CLEAR_STREAM: 'clear-stream',
   SUSPEND_PUSH_TO_TALK_SHORTCUT: 'suspend-push-to-talk-shortcut',
   RESUME_PUSH_TO_TALK_SHORTCUT: 'resume-push-to-talk-shortcut',
   GET_SETTINGS: 'get-settings',

@@ -25,6 +25,8 @@ import type {
   ReplyTone,
   MemoryStats,
   ChatEntry,
+  StreamVisibility,
+  StreamWindowBounds,
 } from '../shared/types';
 
 export interface CompanionCallbacks {
@@ -39,6 +41,8 @@ export interface CompanionCallbacks {
   onStartAudioCapture: () => void;
   onStopAudioCapture: () => void;
   onPlayAudio: (audioBuffer: Buffer) => void;
+  onCursorVisibilityChanged: (enabled: boolean) => void;
+  onStreamVisibilityChanged: (v: StreamVisibility) => void;
 }
 
 export class CompanionManager {
@@ -142,6 +146,18 @@ export class CompanionManager {
 
   toggleCursor(enabled: boolean): void {
     settingsStore.set('isClickyCursorEnabled', enabled);
+    this.callbacks.onCursorVisibilityChanged(enabled);
+    this.emitSettings();
+  }
+
+  setStreamVisibility(v: StreamVisibility): void {
+    settingsStore.set('streamVisibility', v);
+    this.callbacks.onStreamVisibilityChanged(v);
+    this.emitSettings();
+  }
+
+  setStreamWindowBounds(b: StreamWindowBounds): void {
+    settingsStore.set('streamWindowBounds', b);
     this.emitSettings();
   }
 
@@ -371,7 +387,11 @@ export class CompanionManager {
     const myTurnId = this.turnId;
     const abort = new AbortController();
     this.currentAbort = abort;
-    this.setVoiceState('responding');
+    // Stay in 'processing' until TTS audio is ready to play (or the
+    // reply completes without TTS). The UI shows its spinner during
+    // this state, so this keeps the spinner visible for the full
+    // think + stream + synthesize span instead of flashing for a
+    // few ms during screenshot capture only.
 
     // Every side effect below is gated on the turn id. If the user has
     // already started a new PTT by the time an async callback resolves,
@@ -423,6 +443,7 @@ export class CompanionManager {
             // User may have started a new turn while TTS was synthesizing;
             // don't play an answer they no longer want to hear.
             if (!isCurrent()) return;
+            this.setVoiceState('responding');
             this.callbacks.onPlayAudio(audioBuffer);
           } catch (err) {
             console.error('TTS error:', err);

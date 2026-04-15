@@ -14,6 +14,8 @@ import type {
   ReplyTone,
   MemoryStats,
   ChatEntry,
+  StreamVisibility,
+  StreamWindowBounds,
 } from '../shared/types';
 
 const api = {
@@ -35,6 +37,11 @@ const api = {
 
   toggleCursor: (enabled: boolean): void => ipcRenderer.send(IPC.TOGGLE_CURSOR, enabled),
   setLaunchAtLogin: (enabled: boolean): void => ipcRenderer.send(IPC.SET_LAUNCH_AT_LOGIN, enabled),
+  setStreamVisibility: (v: StreamVisibility): void =>
+    ipcRenderer.send(IPC.SET_STREAM_VISIBILITY, v),
+  setStreamWindowBounds: (b: StreamWindowBounds): void =>
+    ipcRenderer.send(IPC.SET_STREAM_WINDOW_BOUNDS, b),
+  clearStream: (): void => ipcRenderer.send(IPC.CLEAR_STREAM),
   setPushToTalkShortcut: (accel: string): void => ipcRenderer.send(IPC.SET_PUSH_TO_TALK_SHORTCUT, accel),
   suspendPushToTalkShortcut: (): void => ipcRenderer.send(IPC.SUSPEND_PUSH_TO_TALK_SHORTCUT),
   resumePushToTalkShortcut: (): void => ipcRenderer.send(IPC.RESUME_PUSH_TO_TALK_SHORTCUT),
@@ -126,6 +133,12 @@ const api = {
     const handler = (_e: Electron.IpcRendererEvent, entry: ChatEntry) => cb(entry);
     ipcRenderer.on(IPC.CHAT_ENTRY_ADDED, handler);
     return () => ipcRenderer.removeListener(IPC.CHAT_ENTRY_ADDED, handler);
+  },
+
+  onClearStream: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on(IPC.CLEAR_STREAM, handler);
+    return () => ipcRenderer.removeListener(IPC.CLEAR_STREAM, handler);
   },
 
   // ── Audio Capture (overlay ↔ main) ──────────────────────────────────
