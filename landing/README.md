@@ -8,8 +8,8 @@ Netlify, Cloudflare Pages, or any plain static host.
 
 ```bash
 cd landing
-npm install        # or bun install / pnpm install
-npm run dev
+bun install
+bun run dev
 ```
 
 Opens on http://localhost:3030.
@@ -17,7 +17,7 @@ Opens on http://localhost:3030.
 ## Build
 
 ```bash
-npm run build
+bun run build
 ```
 
 Produces a static bundle in `landing/out/`.
@@ -27,8 +27,8 @@ Produces a static bundle in `landing/out/`.
 ### GitHub Pages
 
 Serve `landing/out/` from Pages, or wire a workflow that runs
-`cd landing && npm ci && npm run build` and uploads `landing/out/`
-as the Pages artifact.
+`cd landing && bun install --frozen-lockfile && bun run build` and
+uploads `landing/out/` as the Pages artifact.
 
 ### Vercel
 
