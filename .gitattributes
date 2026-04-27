@@ -1,0 +1,8 @@
+# Normalize line endings
+* text=auto
+
+# Force LF for shell scripts — CRLF causes \r: command not found in bash
+*.sh text eol=lf
+
+# Force LF for markdown skill files read by Claude Code
+.claude/skills/*.md text eol=lf
