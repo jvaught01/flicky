@@ -10,16 +10,17 @@ Triggered by: `/merge-flow`
 ## Routing rules (canonical)
 
 ```
-feature/*   →  dev        (integration; all features stabilise here)
-fix/*        →  master     (hotfix) + dev  (backport)
-sprint/vX   →  dev        (then dev → master via release/*)
-release/vX  →  master     (tagged) + dev
-dev         →  master     (via release/* only — never direct)
+feat/*       →  master     (PR reviewed by project head)
+fix/*        →  master     (hotfix, tagged)
+sprint/vX   →  master     (PR reviewed by project head)
+release/vX  →  master     (tagged)
+dev          →  STALE      (no longer used — do not target)
 ```
 
 **master is a production release trigger, not an integration branch.**
 Every merge to master = a versioned installer build fires in CI.
-The project head gates master exclusively via PR review.
+The project head (pango07) gates master exclusively via PR review.
+`dev` was rejected by the project head and is considered stale.
 
 ---
 
@@ -29,15 +30,16 @@ Run: `git rev-parse --abbrev-ref HEAD`
 
 Classify the branch by prefix:
 
-| Branch pattern | Correct PR target | Notes |
-|----------------|-------------------|-------|
-| `feature/*`    | `dev`             | Standard feature work |
-| `sprint/vX.X.X`| `dev`             | Port/selective rebase off master |
-| `fix/*`        | `master` + `dev`  | Hotfix: merge to master (tagged), backport to dev |
-| `release/vX.X.X`| `master` + `dev` | RC branch: merge to master (tagged), sync dev |
-| `dev`          | Never directly    | Only via a `release/*` branch |
-| `master`       | Never             | Production; no outbound PRs |
-| anything else  | Warn + confirm    | Non-standard name — clarify intent |
+| Branch pattern  | Correct PR target | Notes |
+|-----------------|-------------------|-------|
+| `feat/*`        | `master`          | Standard feature work; project head reviews |
+| `sprint/vX.X.X` | `master`          | Port/selective rebase off master |
+| `fix/*`         | `master`          | Hotfix; tagged after merge |
+| `release/vX.X.X`| `master`          | RC branch; tagged after merge |
+| `dev`           | STALE             | Do not use — rejected by project head |
+| `master`        | Never             | Production; no outbound PRs |
+| `feature/*`     | Warn + rename     | Old convention — suggest rename to `feat/*` |
+| anything else   | Warn + confirm    | Non-standard name — clarify intent |
 
 ---
 
@@ -48,17 +50,16 @@ If the developer states or implies a PR target, check it against the table above
 ### If target is correct:
 Confirm: "Branch `[name]` → `[target]` is correct per GitFlow rules. Proceed."
 
-### If target is `master` and branch is NOT `fix/*` or `release/*`:
+### If target is `master` and branch is NOT `feat/*`, `fix/*`, `sprint/*`, or `release/*`:
 Block and warn:
-> "Direct merge to master is not allowed for `[branch-type]` branches.
+> "Direct merge to master is not allowed for unrecognised branch types.
 > master is a production release trigger gated by the project head.
-> Correct target for `[branch]` is `dev`.
-> Open the PR against `dev` instead."
+> Confirm your branch type and rename to the correct pattern before opening a PR."
 
-### If target is `dev` and branch is `fix/*`:
-Warn:
-> "Hotfixes must merge to `master` first (with a version tag), then backport to `dev`.
-> If you merge only to `dev`, the fix will not ship until the next release cycle."
+### If target is `dev`:
+Block and warn:
+> "`dev` is stale and no longer accepted by the project head.
+> All PRs must target `master`. Update your PR target."
 
 ---
 

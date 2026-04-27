@@ -11,15 +11,16 @@ Triggered by: `/new-branch`
 
 | Work type | Branch pattern | Base branch | Example |
 |-----------|---------------|-------------|---------|
-| New feature or experiment | `feature/<short-description>` | `dev` | `feature/voice-preview` |
+| New feature or experiment | `feat/<short-description>` | `master` | `feat/voice-preview` |
 | Bug fix on live production | `fix/<short-description>` | `master` | `fix/ptt-mic-stuck` |
 | Release candidate / QA | `release/vX.X.X` | `dev` | `release/v1.2.0` |
 | Upstream redesign port | `sprint/vX.X.X` | `master` | `sprint/v1.2.0` |
 
 **Rules:**
-- `feature/*` and `release/*` always base off `dev` — never master
-- `fix/*` always base off `master` — hotfixes must ship without carrying unreleased dev work
+- `feat/*` always base off `master` — aligns with project head's convention; `dev` is stale
+- `fix/*` always base off `master` — hotfixes must ship without carrying unreleased work
 - `sprint/*` always base off `master` — selective port after upstream redesign
+- `release/*` always base off `master`
 - Descriptions use kebab-case, no version numbers in feature names
 - Keep names short and unambiguous (3–5 words max)
 
@@ -31,13 +32,13 @@ Ask the developer:
 > "What are you building? (feature / hotfix / release candidate / sprint port)"
 
 If the developer describes the work without naming a type, infer from context:
-- "add X feature" → `feature/*` off `dev`
+- "add X feature" → `feat/*` off `master`
 - "fix a bug in prod" → `fix/*` off `master`
 - "start the next sprint" → `sprint/vX.X.X` off `master`
 - "prep a release" → `release/vX.X.X` off `dev`
 
 Confirm the classification before proceeding:
-> "This sounds like a `feature/*` branch. Correct?"
+> "This sounds like a `feat/*` branch. Correct?"
 
 ---
 
@@ -62,9 +63,9 @@ Do not proceed until the developer confirms the base is current.
 
 Propose a name following the pattern. Use the developer's description, kebab-cased:
 
-> "Suggested branch name: `feature/voice-preview`
-> Base: `dev`
-> Command: `git checkout -b feature/voice-preview dev`"
+> "Suggested branch name: `feat/voice-preview`
+> Base: `master`
+> Command: `git checkout -b feat/voice-preview master`"
 
 Ask: "Does this name work, or would you like to adjust it?"
 
@@ -100,11 +101,11 @@ For `sprint/*` branches specifically, add:
 
 ## Hard constraints (always enforce)
 
-- **Never base a `feature/*` branch off `master`** — unreleased features
-  must not bypass the `dev` integration gate
+- **Never base a `feat/*` branch off `dev`** — `dev` is stale; all work
+  bases off `master` per project head convention
 - **Never base a `fix/*` branch off `dev`** — hotfixes must not carry
-  unreleased dev work into production
-- **Never create branches directly on `master` or `dev`** — those branches
-  receive merges, they do not originate work
+  unreleased work into production
+- **Never create branches directly on `master`** — master receives merges
+  via PR only; the project head gates all merges
 - **Never run `git checkout -b` autonomously** — always present the command
   and let the developer execute it
