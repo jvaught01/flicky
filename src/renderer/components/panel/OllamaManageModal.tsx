@@ -250,7 +250,7 @@ export function OllamaManageModal({ conn, onClose, onModelSelected }: OllamaMana
             />
             <button
               className="btn xs primary"
-              onClick={handlePull}
+              onClick={() => handlePull()}
               disabled={!pullTag.trim() || pullState === 'pulling'}
             >
               {pullState === 'pulling' ? 'Pulling…' : 'Pull'}
