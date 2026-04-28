@@ -8,6 +8,7 @@ import type {
   ReplyTone,
 } from '../../../shared/types';
 import { ProviderKey } from './ProviderKey';
+import { OllamaSection } from './OllamaSection';
 
 interface MindTabProps {
   settings: FlickySettings;
@@ -56,9 +57,16 @@ const OPENAI_MODELS: Array<ModelEntry<OpenAIModel>> = [
 export function MindTab({ settings }: MindTabProps) {
   const [providerOpen, setProviderOpen] = useState(false);
 
-  const isAnthropic = settings.mindProvider === 'anthropic';
+  const provider = settings.mindProvider;
+  const isAnthropic = provider === 'anthropic';
+  const isOpenAI = provider === 'openai';
+  const isOllama = provider === 'ollama';
   const setTone = (t: ReplyTone) => window.flicky.setReplyTone(t);
   const setDepth = (d: ReasoningDepth) => window.flicky.setReasoningDepth(d);
+
+  const providerLabel = isAnthropic ? 'Anthropic' : isOpenAI ? 'OpenAI' : 'Local';
+  const providerLogoText = isAnthropic ? 'A' : isOpenAI ? 'Ai' : '⬡';
+  const providerLogoClass = isAnthropic ? '' : isOpenAI ? 'openai' : 'local';
 
   return (
     <>
@@ -79,40 +87,37 @@ export function MindTab({ settings }: MindTabProps) {
             className="provider-pick"
             onClick={() => setProviderOpen((x) => !x)}
           >
-            <div className={`provider-logo ${isAnthropic ? '' : 'openai'}`}>
-              {isAnthropic ? 'A' : 'Ai'}
-            </div>
-            <span>{isAnthropic ? 'Anthropic' : 'OpenAI'}</span>
+            <div className={`provider-logo ${providerLogoClass}`}>{providerLogoText}</div>
+            <span>{providerLabel}</span>
             <span className="chev">▾</span>
           </button>
         </div>
 
         {providerOpen && (
           <div className="voice-list" style={{ marginTop: 8 }}>
-            <button
-              className={`voice-item ${isAnthropic ? 'on' : ''}`}
-              onClick={() => {
-                window.flicky.setMindProvider('anthropic');
-                setProviderOpen(false);
-              }}
-            >
-              <div className="nm">Anthropic</div>
-              <div className="sub">Claude Sonnet / Opus · built-in web search</div>
-            </button>
-            <button
-              className={`voice-item ${!isAnthropic ? 'on' : ''}`}
-              onClick={() => {
-                window.flicky.setMindProvider('openai');
-                setProviderOpen(false);
-              }}
-            >
-              <div className="nm">OpenAI</div>
-              <div className="sub">GPT-5 · GPT-4o · reasoning effort</div>
-            </button>
+            {(
+              [
+                { id: 'anthropic', label: 'Anthropic', sub: 'Claude Sonnet / Opus · built-in web search' },
+                { id: 'openai', label: 'OpenAI', sub: 'GPT-5 · GPT-4o · reasoning effort' },
+                { id: 'ollama', label: 'Local', sub: 'Ollama · LM Studio · vLLM · any OpenAI-compatible endpoint' },
+              ] as Array<{ id: MindProvider; label: string; sub: string }>
+            ).map((p) => (
+              <button
+                key={p.id}
+                className={`voice-item ${provider === p.id ? 'on' : ''}`}
+                onClick={() => {
+                  window.flicky.setMindProvider(p.id);
+                  setProviderOpen(false);
+                }}
+              >
+                <div className="nm">{p.label}</div>
+                <div className="sub">{p.sub}</div>
+              </button>
+            ))}
           </div>
         )}
 
-        {isAnthropic ? (
+        {isAnthropic && (
           <ProviderKey
             name="anthropic"
             providerLabel="Anthropic"
@@ -121,7 +126,8 @@ export function MindTab({ settings }: MindTabProps) {
             keyPlaceholder="sk-ant-..."
             hideProviderHeader
           />
-        ) : (
+        )}
+        {isOpenAI && (
           <ProviderKey
             name="openai"
             providerLabel="OpenAI"
@@ -132,70 +138,88 @@ export function MindTab({ settings }: MindTabProps) {
             hideProviderHeader
           />
         )}
-        <p className="section-hint">Powers the reasoning behind every answer.</p>
+        {!isOllama && (
+          <p className="section-hint">Powers the reasoning behind every answer.</p>
+        )}
       </div>
 
-      <div className="section">
-        <div className="section-title" style={{ marginBottom: 14 }}>Model</div>
-        <div className="model-list">
-          {isAnthropic
-            ? CLAUDE_MODELS.map((m) => (
-                <button
-                  key={m.id}
-                  className={`model-item ${settings.selectedModel === m.id ? 'on' : ''}`}
-                  onClick={() => window.flicky.setModel(m.id)}
-                >
-                  <div className="model-radio" />
-                  <div className="model-meta">
-                    <div className="model-name">{m.name}</div>
-                    <div className="model-sub">{m.sub}</div>
-                  </div>
-                  {m.tag && <div className={`model-tag ${m.tag.cls}`}>{m.tag.label}</div>}
-                </button>
-              ))
-            : OPENAI_MODELS.map((m) => (
-                <button
-                  key={m.id}
-                  className={`model-item ${settings.selectedOpenAIModel === m.id ? 'on' : ''}`}
-                  onClick={() => window.flicky.setOpenAIModel(m.id)}
-                >
-                  <div className="model-radio" />
-                  <div className="model-meta">
-                    <div className="model-name">{m.name}</div>
-                    <div className="model-sub">{m.sub}</div>
-                  </div>
-                  {m.tag && <div className={`model-tag ${m.tag.cls}`}>{m.tag.label}</div>}
-                </button>
-              ))}
-        </div>
-      </div>
+      {isOllama ? (
+        <OllamaSection
+          ollamaEnabled={
+            (settings.localConnections ?? []).some((c) => c.enabled)
+          }
+          onToggleOllama={(enabled) => {
+            const conns = settings.localConnections ?? [];
+            conns.forEach((c) => {
+              void window.flicky.updateLocalConnection(c.id, { enabled });
+            });
+          }}
+        />
+      ) : (
+        <>
+          <div className="section">
+            <div className="section-title" style={{ marginBottom: 14 }}>Model</div>
+            <div className="model-list">
+              {isAnthropic
+                ? CLAUDE_MODELS.map((m) => (
+                    <button
+                      key={m.id}
+                      className={`model-item ${settings.selectedModel === m.id ? 'on' : ''}`}
+                      onClick={() => window.flicky.setModel(m.id)}
+                    >
+                      <div className="model-radio" />
+                      <div className="model-meta">
+                        <div className="model-name">{m.name}</div>
+                        <div className="model-sub">{m.sub}</div>
+                      </div>
+                      {m.tag && <div className={`model-tag ${m.tag.cls}`}>{m.tag.label}</div>}
+                    </button>
+                  ))
+                : OPENAI_MODELS.map((m) => (
+                    <button
+                      key={m.id}
+                      className={`model-item ${settings.selectedOpenAIModel === m.id ? 'on' : ''}`}
+                      onClick={() => window.flicky.setOpenAIModel(m.id)}
+                    >
+                      <div className="model-radio" />
+                      <div className="model-meta">
+                        <div className="model-name">{m.name}</div>
+                        <div className="model-sub">{m.sub}</div>
+                      </div>
+                      {m.tag && <div className={`model-tag ${m.tag.cls}`}>{m.tag.label}</div>}
+                    </button>
+                  ))}
+            </div>
+          </div>
 
-      <div className="section">
-        <div className="section-title" style={{ marginBottom: 6 }}>Reasoning depth</div>
-        <p className="section-hint" style={{ margin: '0 0 14px' }}>
-          How much Flicky thinks before replying.
-        </p>
-        <div className="seg">
-          <button
-            className={settings.reasoningDepth === 'off' ? 'on' : ''}
-            onClick={() => setDepth('off')}
-          >
-            Off
-          </button>
-          <button
-            className={settings.reasoningDepth === 'medium' ? 'on' : ''}
-            onClick={() => setDepth('medium')}
-          >
-            Medium
-          </button>
-          <button
-            className={settings.reasoningDepth === 'deep' ? 'on' : ''}
-            onClick={() => setDepth('deep')}
-          >
-            Deep
-          </button>
-        </div>
-      </div>
+          <div className="section">
+            <div className="section-title" style={{ marginBottom: 6 }}>Reasoning depth</div>
+            <p className="section-hint" style={{ margin: '0 0 14px' }}>
+              How much Flicky thinks before replying.
+            </p>
+            <div className="seg">
+              <button
+                className={settings.reasoningDepth === 'off' ? 'on' : ''}
+                onClick={() => setDepth('off')}
+              >
+                Off
+              </button>
+              <button
+                className={settings.reasoningDepth === 'medium' ? 'on' : ''}
+                onClick={() => setDepth('medium')}
+              >
+                Medium
+              </button>
+              <button
+                className={settings.reasoningDepth === 'deep' ? 'on' : ''}
+                onClick={() => setDepth('deep')}
+              >
+                Deep
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="section">
         <div className="section-title" style={{ marginBottom: 14 }}>Reply tone</div>

@@ -38,7 +38,7 @@ export type ClaudeModel = 'claude-sonnet-4-6' | 'claude-opus-4-6';
 export type OpenAIModel = 'gpt-5' | 'gpt-5-mini' | 'gpt-4o';
 
 /** Which service backs the Mind (reasoning) capability. */
-export type MindProvider = 'anthropic' | 'openai';
+export type MindProvider = 'anthropic' | 'openai' | 'ollama';
 
 /** Extended-thinking budget mapping. */
 export type ReasoningDepth = 'off' | 'medium' | 'deep';
@@ -58,6 +58,35 @@ export interface DetectedElement {
   y: number;
   label: string;
   screenIndex: number;
+}
+
+// ── Local Connections (Ollama / OpenAI-compatible local endpoints) ─────
+
+export interface OllamaModelInfo {
+  name: string;
+  size?: number;
+  digest?: string;
+  modified_at?: string;
+}
+
+export interface OllamaPullProgress {
+  status: string;
+  completed?: number;
+  total?: number;
+  digest?: string;
+}
+
+export interface LocalConnection {
+  id: string;
+  type: 'local' | 'external';
+  label?: string;
+  url: string;
+  enabled: boolean;
+  bearerEnabled: boolean;
+  prefixId?: string;
+  modelIds: string[];
+  activeModelId?: string;
+  tags: string[];
 }
 
 // ── API Keys ───────────────────────────────────────────────────────────
@@ -159,6 +188,9 @@ export interface FlickySettings {
   /** Last known position + size of the stream window; null = auto-place. */
   streamWindowBounds: StreamWindowBounds | null;
 
+  // Local model connections
+  localConnections: LocalConnection[];
+
   // Lifecycle
   onboardingComplete: boolean;
   apiKeyStatus: ApiKeyStatus;
@@ -184,6 +216,8 @@ export const DEFAULT_SETTINGS: FlickySettings = {
   pushToTalkShortcut: 'Ctrl+Alt+X',
   streamVisibility: 'off',
   streamWindowBounds: null,
+
+  localConnections: [],
 
   onboardingComplete: false,
   apiKeyStatus: { anthropic: false, openai: false, elevenlabs: false, groq: false },
@@ -243,4 +277,22 @@ export const IPC = {
   SET_API_KEY: 'set-api-key',
   DELETE_API_KEY: 'delete-api-key',
   GET_API_KEY_STATUS: 'get-api-key-status',
+
+  // Local Connection Management
+  GET_LOCAL_CONNECTIONS: 'get-local-connections',
+  ADD_LOCAL_CONNECTION: 'add-local-connection',
+  UPDATE_LOCAL_CONNECTION: 'update-local-connection',
+  DELETE_LOCAL_CONNECTION: 'delete-local-connection',
+  TEST_LOCAL_CONNECTION: 'test-local-connection',
+  GET_OLLAMA_MODELS: 'get-ollama-models',
+  SET_LOCAL_CONNECTION_KEY: 'set-local-connection-key',
+  DELETE_LOCAL_CONNECTION_KEY: 'delete-local-connection-key',
+
+  // Ollama Model Management
+  PULL_OLLAMA_MODEL: 'pull-ollama-model',
+  OLLAMA_PULL_PROGRESS: 'ollama-pull-progress',
+  OLLAMA_PULL_COMPLETE: 'ollama-pull-complete',
+  OLLAMA_PULL_ERROR: 'ollama-pull-error',
+  DELETE_OLLAMA_MODEL: 'delete-ollama-model',
+  CREATE_OLLAMA_MODEL: 'create-ollama-model',
 } as const;

@@ -1,6 +1,7 @@
 import { app, systemPreferences } from 'electron';
 import { ClaudeAPI } from './services/claude-api';
 import { OpenAIAPI } from './services/openai-api';
+import { OllamaAPI } from './services/ollama-api';
 import { ElevenLabsTTS } from './services/elevenlabs-tts';
 import { createTranscriptionProvider, type TranscriptionProvider } from './services/transcription';
 import { captureAllDisplays } from './services/screen-capture';
@@ -50,6 +51,7 @@ export class CompanionManager {
 
   private claude: ClaudeAPI;
   private openai: OpenAIAPI;
+  private ollama: OllamaAPI;
   private tts: ElevenLabsTTS;
   private context: ContextManager;
   private transcriptionProvider: TranscriptionProvider | null = null;
@@ -77,6 +79,7 @@ export class CompanionManager {
     this.callbacks = callbacks;
     this.claude = new ClaudeAPI();
     this.openai = new OpenAIAPI();
+    this.ollama = new OllamaAPI();
     this.tts = new ElevenLabsTTS();
     this.context = new ContextManager();
 
@@ -479,6 +482,34 @@ export class CompanionManager {
         settings.selectedOpenAIModel,
         mindOptions,
         mindCallbacks,
+      );
+    } else if (settings.mindProvider === 'ollama') {
+      const connections = (settings.localConnections ?? []).filter((c) => c.enabled);
+      const conn = connections[0];
+      if (!conn) {
+        mindCallbacks.onError(new Error('No enabled local connection. Add one in Mind → Local.'));
+        return;
+      }
+      const bearerToken = keyStore.getApiKey(`local_${conn.id}`) ?? undefined;
+      let model: string;
+      if (conn.activeModelId) {
+        model = conn.activeModelId;
+      } else if (conn.modelIds.length > 0) {
+        model = conn.modelIds[0];
+      } else {
+        const discovered = await this.ollama.getModels(conn.url, bearerToken);
+        model = discovered[0] ?? 'llama3';
+      }
+      const fullModelId = conn.prefixId ? `${conn.prefixId}${model}` : model;
+      await this.ollama.streamChat(
+        result.text,
+        this.lastScreenshots,
+        this.context.getMessagesForSend(),
+        fullModelId,
+        { replyTone: mindOptions.replyTone, signal: mindOptions.signal },
+        mindCallbacks,
+        conn.url,
+        bearerToken,
       );
     } else {
       await this.claude.streamChat(
