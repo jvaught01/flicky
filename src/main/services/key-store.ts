@@ -18,7 +18,8 @@ import { writeFileAtomic } from './fs-util';
  */
 
 const KEY_NAMES = ['anthropic', 'openai', 'elevenlabs', 'groq'] as const;
-export type ApiKeyName = (typeof KEY_NAMES)[number];
+export type NamedApiKey = (typeof KEY_NAMES)[number];
+export type ApiKeyName = NamedApiKey | string;
 
 interface KeyFile {
   encryptedKeys: Record<string, string>; // base64-encoded ciphertext
@@ -83,7 +84,7 @@ export function deleteApiKey(name: ApiKeyName): void {
   writeKeyFile(data);
 }
 
-export function getKeyStatus(): Record<ApiKeyName, boolean> {
+export function getKeyStatus(): Record<NamedApiKey, boolean> {
   return {
     anthropic: hasApiKey('anthropic'),
     openai: hasApiKey('openai'),

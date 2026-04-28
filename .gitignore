@@ -6,3 +6,9 @@ release/
 .DS_Store
 Thumbs.db
 *.log
+
+# Local-only files — never commit
+CLAUDE.md
+.changelog/
+run.bat
+setup.bat

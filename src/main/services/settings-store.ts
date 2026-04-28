@@ -12,6 +12,7 @@ import type {
   ReplyTone,
   StreamVisibility,
   StreamWindowBounds,
+  LocalConnection,
 } from '../../shared/types';
 
 /**
@@ -40,6 +41,8 @@ export interface StoredSettings {
   streamVisibility: StreamVisibility;
   streamWindowBounds: StreamWindowBounds | null;
 
+  localConnections: LocalConnection[];
+
   onboardingComplete: boolean;
 }
 
@@ -63,6 +66,8 @@ const DEFAULTS: StoredSettings = {
   pushToTalkShortcut: 'Ctrl+Alt+X',
   streamVisibility: 'off',
   streamWindowBounds: null,
+
+  localConnections: [],
 
   onboardingComplete: false,
 };

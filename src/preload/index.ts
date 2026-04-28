@@ -16,7 +16,11 @@ import type {
   ChatEntry,
   StreamVisibility,
   StreamWindowBounds,
+  LocalConnection,
+  OllamaModelInfo,
+  OllamaPullProgress,
 } from '../shared/types';
+import type { OllamaTestResult } from '../main/services/ollama-api';
 
 const api = {
   // ── Settings ───────────────────────────────────────────────────────
@@ -67,6 +71,47 @@ const api = {
   // ── Chat history ────────────────────────────────────────────────────
   getChatHistory: (): Promise<ChatEntry[]> => ipcRenderer.invoke(IPC.GET_CHAT_HISTORY),
   clearChatHistory: (): void => ipcRenderer.send(IPC.CLEAR_CHAT_HISTORY),
+
+  // ── Local Connections ─────────────────────────────────────────────────
+  getLocalConnections: (): Promise<LocalConnection[]> =>
+    ipcRenderer.invoke(IPC.GET_LOCAL_CONNECTIONS),
+  addLocalConnection: (conn: Omit<LocalConnection, 'id'>): Promise<LocalConnection> =>
+    ipcRenderer.invoke(IPC.ADD_LOCAL_CONNECTION, conn),
+  updateLocalConnection: (id: string, patch: Partial<LocalConnection>): Promise<void> =>
+    ipcRenderer.invoke(IPC.UPDATE_LOCAL_CONNECTION, id, patch),
+  deleteLocalConnection: (id: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.DELETE_LOCAL_CONNECTION, id),
+  testLocalConnection: (url: string, bearerToken?: string): Promise<OllamaTestResult> =>
+    ipcRenderer.invoke(IPC.TEST_LOCAL_CONNECTION, url, bearerToken),
+  getOllamaModels: (url: string, bearerToken?: string): Promise<OllamaModelInfo[]> =>
+    ipcRenderer.invoke(IPC.GET_OLLAMA_MODELS, url, bearerToken),
+  setLocalConnectionKey: (id: string, token: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.SET_LOCAL_CONNECTION_KEY, id, token),
+  deleteLocalConnectionKey: (id: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.DELETE_LOCAL_CONNECTION_KEY, id),
+
+  // ── Ollama Model Management ───────────────────────────────────────────
+  pullOllamaModel: (url: string, modelTag: string, bearerToken?: string): void =>
+    ipcRenderer.send(IPC.PULL_OLLAMA_MODEL, url, modelTag, bearerToken),
+  onOllamaPullProgress: (cb: (p: OllamaPullProgress) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, p: OllamaPullProgress) => cb(p);
+    ipcRenderer.on(IPC.OLLAMA_PULL_PROGRESS, handler);
+    return () => ipcRenderer.removeListener(IPC.OLLAMA_PULL_PROGRESS, handler);
+  },
+  onOllamaPullComplete: (cb: (info: { model: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, info: { model: string }) => cb(info);
+    ipcRenderer.on(IPC.OLLAMA_PULL_COMPLETE, handler);
+    return () => ipcRenderer.removeListener(IPC.OLLAMA_PULL_COMPLETE, handler);
+  },
+  onOllamaPullError: (cb: (info: { error: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, info: { error: string }) => cb(info);
+    ipcRenderer.on(IPC.OLLAMA_PULL_ERROR, handler);
+    return () => ipcRenderer.removeListener(IPC.OLLAMA_PULL_ERROR, handler);
+  },
+  deleteOllamaModel: (url: string, modelName: string, bearerToken?: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.DELETE_OLLAMA_MODEL, url, modelName, bearerToken),
+  createOllamaModel: (url: string, modelTag: string, modelfileJson: string, bearerToken?: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.CREATE_OLLAMA_MODEL, url, modelTag, modelfileJson, bearerToken),
 
   // ── Lifecycle ──────────────────────────────────────────────────────
   openExternal: (url: string): void => ipcRenderer.send(IPC.OPEN_EXTERNAL, url),

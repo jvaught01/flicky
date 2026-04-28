@@ -2,9 +2,13 @@ import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, shell,
 import path from 'path';
 import { CompanionManager } from './companion-manager';
 import { createPanelWindow, createOverlayWindow, createStreamWindow } from './windows';
-import { IPC, type StreamVisibility, type StreamWindowBounds } from '../shared/types';
+import { IPC, type StreamVisibility, type StreamWindowBounds, type LocalConnection } from '../shared/types';
 import { AUDIO_IPC } from './services/audio-capture';
 import * as chatHistory from './services/chat-history-store';
+import * as settingsStore from './services/settings-store';
+import { setApiKey, getApiKey, deleteApiKey } from './services/key-store';
+import { OllamaAPI } from './services/ollama-api';
+import { randomUUID } from 'crypto';
 
 // Prevent multiple instances
 const gotLock = app.requestSingleInstanceLock();
@@ -280,6 +284,82 @@ app.whenReady().then(() => {
   ipcMain.on(IPC.SET_API_KEY, (_e, name, value) => companion.setApiKey(name, value));
   ipcMain.on(IPC.DELETE_API_KEY, (_e, name) => companion.deleteApiKey(name));
   ipcMain.handle(IPC.GET_API_KEY_STATUS, () => companion.getApiKeyStatus());
+
+  // Local Connection Management
+  const ollamaAPI = new OllamaAPI();
+
+  function emitLocalConnections(): void {
+    const settings = companion.getSettings();
+    sendToPanel(IPC.SETTINGS_CHANGED, settings);
+  }
+
+  ipcMain.handle(IPC.GET_LOCAL_CONNECTIONS, () => {
+    return settingsStore.get('localConnections') ?? [];
+  });
+
+  ipcMain.handle(IPC.ADD_LOCAL_CONNECTION, (_e, conn: Omit<LocalConnection, 'id'>) => {
+    const connections = settingsStore.get('localConnections') ?? [];
+    const newConn: LocalConnection = { ...conn, id: randomUUID() };
+    settingsStore.set('localConnections', [...connections, newConn]);
+    emitLocalConnections();
+    return newConn;
+  });
+
+  ipcMain.handle(IPC.UPDATE_LOCAL_CONNECTION, (_e, id: string, patch: Partial<LocalConnection>) => {
+    const connections = settingsStore.get('localConnections') ?? [];
+    const updated = connections.map((c) => (c.id === id ? { ...c, ...patch, id } : c));
+    settingsStore.set('localConnections', updated);
+    emitLocalConnections();
+  });
+
+  ipcMain.handle(IPC.DELETE_LOCAL_CONNECTION, (_e, id: string) => {
+    const connections = settingsStore.get('localConnections') ?? [];
+    settingsStore.set('localConnections', connections.filter((c) => c.id !== id));
+    try { deleteApiKey(`local_${id}`); } catch { /* key may not exist */ }
+    emitLocalConnections();
+  });
+
+  ipcMain.handle(IPC.TEST_LOCAL_CONNECTION, (_e, url: string, bearerToken?: string) => {
+    return ollamaAPI.testConnection(url, bearerToken);
+  });
+
+  ipcMain.handle(IPC.SET_LOCAL_CONNECTION_KEY, (_e, id: string, token: string) => {
+    setApiKey(`local_${id}`, token);
+  });
+
+  ipcMain.handle(IPC.DELETE_LOCAL_CONNECTION_KEY, (_e, id: string) => {
+    try { deleteApiKey(`local_${id}`); } catch { /* key may not exist */ }
+  });
+
+  // Ollama Model Management
+  ipcMain.handle(IPC.GET_OLLAMA_MODELS, (_e, url: string, bearerToken?: string) => {
+    return ollamaAPI.getModelDetails(url, bearerToken);
+  });
+
+  ipcMain.on(IPC.PULL_OLLAMA_MODEL, (event, url: string, modelTag: string, bearerToken?: string) => {
+    const controller = new AbortController();
+    ollamaAPI.pullModel(
+      url,
+      modelTag,
+      bearerToken,
+      (progress) => { event.sender.send(IPC.OLLAMA_PULL_PROGRESS, progress); },
+      controller.signal,
+    ).then(() => {
+      event.sender.send(IPC.OLLAMA_PULL_COMPLETE, { model: modelTag });
+    }).catch((err: Error) => {
+      if (err.name !== 'AbortError') {
+        event.sender.send(IPC.OLLAMA_PULL_ERROR, { error: err.message });
+      }
+    });
+  });
+
+  ipcMain.handle(IPC.DELETE_OLLAMA_MODEL, (_e, url: string, modelName: string, bearerToken?: string) => {
+    return ollamaAPI.deleteModel(url, modelName, bearerToken);
+  });
+
+  ipcMain.handle(IPC.CREATE_OLLAMA_MODEL, (_e, url: string, modelTag: string, modelfileJson: string, bearerToken?: string) => {
+    return ollamaAPI.createModel(url, modelTag, modelfileJson, bearerToken);
+  });
 
   // Audio capture: relay chunks from overlay renderer to companion
   ipcMain.on(AUDIO_IPC.AUDIO_CHUNK, (_e, buffer: Buffer) => {
