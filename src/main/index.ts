@@ -181,15 +181,32 @@ app.whenReady().then(() => {
   }
 
   // Register global push-to-talk shortcut.
-  // globalShortcut fires repeatedly on key-repeat while held, so we
-  // debounce: the first press starts recording, subsequent repeats are
-  // ignored, and we stop recording after the shortcut hasn't fired for
-  // a short window (meaning the key was released).
+  //
+  // Windows/Linux: globalShortcut fires repeatedly on OS key-repeat while
+  // the accelerator is held, so we debounce — first press starts recording,
+  // subsequent repeats are ignored, and we stop after no fires for 250 ms
+  // (meaning the key was released).
+  //
+  // macOS: globalShortcut fires exactly once on press; the OS does not
+  // repeat global accelerators and Electron exposes no key-up event. We
+  // can't implement true press-and-hold without a native key-event hook,
+  // so fall back to toggle: first tap starts, second tap stops.
   let pttDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let pttActive = false;
   let currentShortcut = '';
+  const isMac = process.platform === 'darwin';
 
   const pttHandler = () => {
+    if (isMac) {
+      if (!pttActive) {
+        pttActive = true;
+        companion.startPushToTalk();
+      } else {
+        pttActive = false;
+        companion.stopPushToTalk();
+      }
+      return;
+    }
     if (pttDebounceTimer) {
       clearTimeout(pttDebounceTimer);
       pttDebounceTimer = null;

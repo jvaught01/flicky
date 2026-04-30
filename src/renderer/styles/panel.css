@@ -1125,3 +1125,42 @@ button.provider-pick:hover {
   background: var(--fl-border); border-radius: 999px;
 }
 .catalog-scroll::-webkit-scrollbar-thumb:hover { background: var(--fl-border-strong); }
+
+/* ── Permissions banner ─────────────────────────────────────────── */
+.perm-banner {
+  margin: 18px 28px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--fl-warn);
+  background: var(--fl-warn-bg);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.perm-banner-head { display: flex; flex-direction: column; gap: 2px; }
+.perm-banner-title {
+  font-size: 13px; font-weight: 600; color: var(--fl-ink);
+}
+.perm-banner-sub {
+  font-size: 12px; color: var(--fl-muted);
+}
+.perm-banner-rows { display: flex; flex-direction: column; gap: 6px; }
+.perm-banner-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 8px 10px;
+  background: rgba(0,0,0,0.18); border-radius: 8px;
+}
+.perm-banner-text { display: flex; flex-direction: column; gap: 1px; }
+.perm-banner-label {
+  font-size: 12.5px; font-weight: 600; color: var(--fl-ink-soft);
+}
+.perm-banner-reason {
+  font-size: 11.5px; color: var(--fl-muted);
+}
+.perm-banner-btn {
+  font-size: 12px; font-weight: 600;
+  color: #1a1a1f; background: var(--fl-warn);
+  padding: 6px 14px; border-radius: 6px;
+  border: none; cursor: pointer;
+}
+.perm-banner-btn:hover { filter: brightness(1.08); }
