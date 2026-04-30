@@ -6,6 +6,7 @@ import { MindTab } from './panel/MindTab';
 import { VoiceTab } from './panel/VoiceTab';
 import { EarTab } from './panel/EarTab';
 import { GeneralTab } from './panel/GeneralTab';
+import { PermissionsBanner } from './panel/PermissionsBanner';
 import { CursorIcon } from './CursorIcon';
 
 type Tab = 'home' | 'chats' | 'mind' | 'voice' | 'ear' | 'general';
@@ -83,6 +84,7 @@ export function PanelApp() {
       </aside>
 
       <main className="main">
+        <PermissionsBanner />
         {tab === 'home' && (
           <HomeTab
             voiceState={voiceState}

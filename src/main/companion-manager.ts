@@ -1,4 +1,4 @@
-import { app, systemPreferences } from 'electron';
+import { app, systemPreferences, shell, desktopCapturer } from 'electron';
 import { ClaudeAPI } from './services/claude-api';
 import { OpenAIAPI } from './services/openai-api';
 import { OllamaAPI } from './services/ollama-api';
@@ -293,8 +293,40 @@ export class CompanionManager {
   }
 
   async requestPermission(kind: string): Promise<void> {
-    if (process.platform === 'darwin' && kind === 'microphone') {
-      await systemPreferences.askForMediaAccess('microphone');
+    if (process.platform !== 'darwin') return;
+
+    if (kind === 'microphone') {
+      const status = systemPreferences.getMediaAccessStatus('microphone');
+      if (status === 'not-determined') {
+        await systemPreferences.askForMediaAccess('microphone');
+      } else if (status === 'denied' || status === 'restricted') {
+        // The OS only shows the prompt once; after denial the user must
+        // re-enable us in System Settings. Deeplink straight to the pane.
+        shell.openExternal(
+          'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+        );
+      }
+      return;
+    }
+
+    if (kind === 'screen') {
+      const status = systemPreferences.getMediaAccessStatus('screen');
+      if (status === 'not-determined') {
+        // No askForMediaAccess equivalent for screen — but actually
+        // *attempting* a capture provokes the system prompt the first time.
+        try {
+          await desktopCapturer.getSources({
+            types: ['screen'],
+            thumbnailSize: { width: 1, height: 1 },
+          });
+        } catch (err) {
+          console.error('[Flicky] screen permission probe failed:', err);
+        }
+      } else if (status === 'denied' || status === 'restricted') {
+        shell.openExternal(
+          'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
+        );
+      }
     }
   }
 
