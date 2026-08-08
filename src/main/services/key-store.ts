@@ -5,16 +5,17 @@ import { app } from 'electron';
 import { writeFileAtomic } from './fs-util';
 
 /**
- * Secure API key storage using Electron's safeStorage API.
+ * Secure API key storage using Electron's safeStorage API when available.
  *
  * Keys are encrypted at rest using the OS-level credential store:
  *  - macOS: Keychain
  *  - Windows: DPAPI (Data Protection API)
  *  - Linux: libsecret / kwallet
  *
- * The encrypted blobs are persisted in a JSON file in the app's userData
- * directory. Even if someone reads that file, the values are opaque
- * ciphertext that can only be decrypted by the current OS user.
+ * On Linux without a secret service (e.g. minimal Hyprland/Sway), safeStorage
+ * is unavailable; keys are stored as base64 instead so the app still works.
+ *
+ * The blobs are persisted in a JSON file in the app's userData directory.
  */
 
 const KEY_NAMES = ['anthropic', 'openai', 'elevenlabs', 'groq'] as const;
@@ -55,8 +56,12 @@ export function setApiKey(name: ApiKeyName, plaintext: string): void {
     return;
   }
 
-  const encrypted = safeStorage.encryptString(plaintext);
-  data.encryptedKeys[name] = encrypted.toString('base64');
+  if (safeStorage.isEncryptionAvailable()) {
+    const encrypted = safeStorage.encryptString(plaintext);
+    data.encryptedKeys[name] = encrypted.toString('base64');
+  } else {
+    data.encryptedKeys[name] = Buffer.from(plaintext).toString('base64');
+  }
   writeKeyFile(data);
 }
 
@@ -65,9 +70,16 @@ export function getApiKey(name: ApiKeyName): string | null {
   const blob = data.encryptedKeys[name];
   if (!blob) return null;
 
+  if (safeStorage.isEncryptionAvailable()) {
+    try {
+      return safeStorage.decryptString(Buffer.from(blob, 'base64'));
+    } catch {
+      // Fall through: blob may be legacy/plain base64 from a no-encryption env.
+    }
+  }
+
   try {
-    const buffer = Buffer.from(blob, 'base64');
-    return safeStorage.decryptString(buffer);
+    return Buffer.from(blob, 'base64').toString('utf-8');
   } catch {
     return null;
   }
