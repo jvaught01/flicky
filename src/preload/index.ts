@@ -33,7 +33,10 @@ const initialDisplayInfo: DisplayInfo | null = (() => {
   if (!arg) return null;
   try {
     return JSON.parse(arg.slice(DISPLAY_INFO_ARG_PREFIX.length)) as DisplayInfo;
-  } catch {
+  } catch (err) {
+    // Falling back to null silently would reproduce the exact bug this
+    // argument exists to fix, so make the failure visible.
+    console.warn('[Flicky] Could not parse display info from launch args:', err);
     return null;
   }
 })();

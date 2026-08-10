@@ -89,6 +89,11 @@ export function createOverlayWindow(display: Display): BrowserWindow {
       // Hand the renderer its coordinate space up front. The IPC push
       // below can land before React has attached its listener, so the
       // overlay needs a value it can read synchronously on mount.
+      //
+      // Safe as plain JSON only because every DisplayInfo field is
+      // numeric, so the serialized value can never contain a space.
+      // Windows splits additionalArguments on spaces — if this type ever
+      // grows a string field (a display label, say), base64 it first.
       additionalArguments: [DISPLAY_INFO_ARG_PREFIX + JSON.stringify(displayInfo)],
     },
   });
@@ -104,9 +109,11 @@ export function createOverlayWindow(display: Display): BrowserWindow {
 
   loadPage(win, 'overlay');
 
-  // Re-push on every load so a reload (or a dev-server HMR full reload)
-  // refreshes the renderer's copy. `on`, not `once`: the argv value above
-  // is only correct for the first load.
+  // Belt-and-braces: the preload already reads this same snapshot out of
+  // argv on every load, including reloads, so this send is redundant
+  // rather than an update path. It stays as a cheap safety net in case
+  // the argv read ever fails. Bounds changes do NOT arrive here — the
+  // window is destroyed and recreated by rebuildOverlays instead.
   win.webContents.on('did-finish-load', () => {
     win.webContents.send('display-info', displayInfo);
   });
