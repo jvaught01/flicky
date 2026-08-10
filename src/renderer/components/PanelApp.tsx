@@ -85,6 +85,17 @@ export function PanelApp() {
 
       <main className="main">
         <PermissionsBanner />
+        {!settings.encryptionAvailable && (
+          <div className="perm-banner">
+            <div className="perm-banner-head">
+              <span className="perm-banner-title">API keys are not encrypted</span>
+              <span className="perm-banner-sub">
+                OS secure storage is unavailable on this system. Keys are not encrypted and are
+                readable by anything that can read the file.
+              </span>
+            </div>
+          </div>
+        )}
         {tab === 'home' && (
           <HomeTab
             voiceState={voiceState}
