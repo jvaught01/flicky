@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Display, screen } from 'electron';
 import path from 'path';
-import type { StreamWindowBounds } from '../shared/types';
+import { DISPLAY_INFO_ARG_PREFIX, type DisplayInfo, type StreamWindowBounds } from '../shared/types';
 
 const isDev = !app.isPackaged && process.env.VITE_DEV_SERVER === '1';
 
@@ -51,9 +51,18 @@ export function createPanelWindow(): BrowserWindow {
   return win;
 }
 
+function toDisplayInfo(display: Display): DisplayInfo {
+  return {
+    id: display.id,
+    bounds: display.bounds,
+    scaleFactor: display.scaleFactor,
+  };
+}
+
 /** A transparent, click-through overlay covering one display. */
 export function createOverlayWindow(display: Display): BrowserWindow {
   const { x, y, width, height } = display.bounds;
+  const displayInfo = toDisplayInfo(display);
 
   const win = new BrowserWindow({
     x,
@@ -77,6 +86,10 @@ export function createOverlayWindow(display: Display): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Hand the renderer its coordinate space up front. The IPC push
+      // below can land before React has attached its listener, so the
+      // overlay needs a value it can read synchronously on mount.
+      additionalArguments: [DISPLAY_INFO_ARG_PREFIX + JSON.stringify(displayInfo)],
     },
   });
 
@@ -91,13 +104,11 @@ export function createOverlayWindow(display: Display): BrowserWindow {
 
   loadPage(win, 'overlay');
 
-  // Pass display info to overlay so it knows its coordinate space
-  win.webContents.once('did-finish-load', () => {
-    win.webContents.send('display-info', {
-      id: display.id,
-      bounds: display.bounds,
-      scaleFactor: display.scaleFactor,
-    });
+  // Re-push on every load so a reload (or a dev-server HMR full reload)
+  // refreshes the renderer's copy. `on`, not `once`: the argv value above
+  // is only correct for the first load.
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.send('display-info', displayInfo);
   });
 
   return win;

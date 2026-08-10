@@ -20,6 +20,21 @@ export interface TranscriptionResult {
   isFinal: boolean;
 }
 
+// ── Overlay / Displays ─────────────────────────────────────────────────
+
+export interface DisplayInfo {
+  id: number;
+  bounds: { x: number; y: number; width: number; height: number };
+  scaleFactor: number;
+}
+
+/**
+ * Prefix used to hand an overlay window its display info through
+ * `webPreferences.additionalArguments`, so the renderer can read it
+ * synchronously at startup instead of racing an IPC message.
+ */
+export const DISPLAY_INFO_ARG_PREFIX = '--flicky-display-info=';
+
 // ── Screen Capture ─────────────────────────────────────────────────────
 
 export interface ScreenCapture {
