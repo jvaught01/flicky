@@ -8,7 +8,11 @@ import * as chatHistory from './services/chat-history-store';
 import * as settingsStore from './services/settings-store';
 import { setApiKey, getApiKey, deleteApiKey } from './services/key-store';
 import { OllamaAPI } from './services/ollama-api';
+import { applyGpuFallback, watchGpuProcess } from './services/gpu-guard';
 import { randomUUID } from 'crypto';
+
+// Must run before the app is ready, and before any window exists.
+applyGpuFallback();
 
 // Prevent multiple instances
 const gotLock = app.requestSingleInstanceLock();
@@ -104,6 +108,8 @@ function sendToAll(channel: string, ...args: unknown[]): void {
 // ── App Lifecycle ──────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
+  watchGpuProcess();
+
   // Initialize companion manager
   companion = new CompanionManager({
     onVoiceStateChanged: (state) => {
