@@ -194,6 +194,8 @@ export interface FlickySettings {
   // Lifecycle
   onboardingComplete: boolean;
   apiKeyStatus: ApiKeyStatus;
+  /** false when OS safeStorage is unavailable (keys stored unencrypted). */
+  encryptionAvailable: boolean;
 }
 
 export const DEFAULT_SETTINGS: FlickySettings = {
@@ -221,6 +223,7 @@ export const DEFAULT_SETTINGS: FlickySettings = {
 
   onboardingComplete: false,
   apiKeyStatus: { anthropic: false, openai: false, elevenlabs: false, groq: false },
+  encryptionAvailable: true,
 };
 
 // ── IPC Channels ───────────────────────────────────────────────────────

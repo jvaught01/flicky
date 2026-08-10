@@ -14,7 +14,7 @@ export function writeFileAtomic(filePath: string, data: string): void {
   const tmp = path.join(dir, `.${base}.tmp.${process.pid}.${Date.now()}`);
 
   try {
-    const fd = fs.openSync(tmp, 'w');
+    const fd = fs.openSync(tmp, 'w', 0o600);
     try {
       fs.writeSync(fd, data, 0, 'utf-8');
       // Flush to disk before renaming so a post-rename crash doesn't
@@ -24,6 +24,7 @@ export function writeFileAtomic(filePath: string, data: string): void {
       fs.closeSync(fd);
     }
     fs.renameSync(tmp, filePath);
+    try { fs.chmodSync(filePath, 0o600); } catch { /* best-effort if chmod unsupported */ }
   } catch (err) {
     // Best-effort cleanup of the temp file if rename failed.
     try { fs.unlinkSync(tmp); } catch { /* ignore */ }

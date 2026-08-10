@@ -13,7 +13,9 @@ import { writeFileAtomic } from './fs-util';
  *  - Linux: libsecret / kwallet
  *
  * On Linux without a secret service (e.g. minimal Hyprland/Sway), safeStorage
- * is unavailable; keys are stored as base64 instead so the app still works.
+ * is unavailable; keys are not encrypted and are readable by anything that
+ * can read the file. Values are still base64-encoded and tagged so the format
+ * is unambiguous on read.
  *
  * The blobs are persisted in a JSON file in the app's userData directory.
  */
@@ -22,8 +24,11 @@ const KEY_NAMES = ['anthropic', 'openai', 'elevenlabs', 'groq'] as const;
 export type NamedApiKey = (typeof KEY_NAMES)[number];
 export type ApiKeyName = NamedApiKey | string;
 
+const ENC_PREFIX = 'enc:';
+const PLAIN_PREFIX = 'plain:';
+
 interface KeyFile {
-  encryptedKeys: Record<string, string>; // base64-encoded ciphertext
+  encryptedKeys: Record<string, string>; // tagged base64 blobs
 }
 
 function getKeyFilePath(): string {
@@ -56,12 +61,9 @@ export function setApiKey(name: ApiKeyName, plaintext: string): void {
     return;
   }
 
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = safeStorage.encryptString(plaintext);
-    data.encryptedKeys[name] = encrypted.toString('base64');
-  } else {
-    data.encryptedKeys[name] = Buffer.from(plaintext).toString('base64');
-  }
+  data.encryptedKeys[name] = safeStorage.isEncryptionAvailable()
+    ? `${ENC_PREFIX}${safeStorage.encryptString(plaintext).toString('base64')}`
+    : `${PLAIN_PREFIX}${Buffer.from(plaintext).toString('base64')}`;
   writeKeyFile(data);
 }
 
@@ -70,11 +72,28 @@ export function getApiKey(name: ApiKeyName): string | null {
   const blob = data.encryptedKeys[name];
   if (!blob) return null;
 
+  if (blob.startsWith(ENC_PREFIX)) {
+    try {
+      return safeStorage.decryptString(Buffer.from(blob.slice(ENC_PREFIX.length), 'base64'));
+    } catch {
+      return null;
+    }
+  }
+
+  if (blob.startsWith(PLAIN_PREFIX)) {
+    try {
+      return Buffer.from(blob.slice(PLAIN_PREFIX.length), 'base64').toString('utf-8');
+    } catch {
+      return null;
+    }
+  }
+
+  // Legacy untagged blobs (pre-tag format).
   if (safeStorage.isEncryptionAvailable()) {
     try {
       return safeStorage.decryptString(Buffer.from(blob, 'base64'));
     } catch {
-      // Fall through: blob may be legacy/plain base64 from a no-encryption env.
+      // Fall through: blob may be plain base64 from a no-encryption env.
     }
   }
 

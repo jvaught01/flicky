@@ -94,6 +94,7 @@ export class CompanionManager {
     return {
       ...stored,
       apiKeyStatus: keyStore.getKeyStatus(),
+      encryptionAvailable: keyStore.isEncryptionAvailable(),
     };
   }
 
