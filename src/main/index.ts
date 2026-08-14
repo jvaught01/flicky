@@ -410,7 +410,12 @@ app.whenReady().then(() => {
     let pos: { x: number; y: number } | null = null;
     if (cursorSource) {
       const raw = cursorSource.poll();
-      if (raw) pos = screen.screenToDipPoint(raw);
+      // X11 QueryPointer returns physical pixels; convert to DIPs manually
+      // because Electron's screenToDipPoint/screenToDipRect are win32-only.
+      if (raw) {
+        const display = screen.getDisplayMatching({ x: raw.x, y: raw.y, width: 1, height: 1 });
+        pos = { x: raw.x / display.scaleFactor, y: raw.y / display.scaleFactor };
+      }
     } else {
       pos = screen.getCursorScreenPoint();
     }
