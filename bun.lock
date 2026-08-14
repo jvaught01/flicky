@@ -7,6 +7,7 @@
       "dependencies": {
         "posthog-node": "^4.0.0",
         "ws": "^8.18.0",
+        "x11": "^3.9.1",
       },
       "devDependencies": {
         "@electron/notarize": "^2.5.0",
@@ -1018,6 +1019,8 @@
     "wrappy": ["wrappy@1.0.2", "", {}, "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ=="],
 
     "ws": ["ws@8.20.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-sAt8BhgNbzCtgGbt2OxmpuryO63ZoDk/sqaB/znQm94T4fCEsy/yV+7CdC1kJhOU9lboAEU7R3kquuycDoibVA=="],
+
+    "x11": ["x11@3.9.1", "", {}, "sha512-FRsfhutjoBi93FNsjkoRV/kAmQS/fknL54QN872k8b7RbNiLefbsbPvaYPGq1+201xEt9VRR5+Lm+pmJn/dsTQ=="],
 
     "xmlbuilder": ["xmlbuilder@15.1.1", "", {}, "sha512-yMqGBqtXyeN1e3TGYvgNgDVZ3j84W4cwkOXQswghol6APgZWaff9lnbvN7MHYJOiXsvGPXtjTYJEiC9J2wv9Eg=="],
 

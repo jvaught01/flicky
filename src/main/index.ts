@@ -2,6 +2,7 @@ import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, shell,
 import path from 'path';
 import { CompanionManager } from './companion-manager';
 import { createPanelWindow, createOverlayWindow, createStreamWindow } from './windows';
+import { X11CursorSource } from './services/cursor-source';
 import { IPC, type StreamVisibility, type StreamWindowBounds, type LocalConnection } from '../shared/types';
 import { AUDIO_IPC } from './services/audio-capture';
 import * as chatHistory from './services/chat-history-store';
@@ -394,10 +395,31 @@ app.whenReady().then(() => {
     companion.handleAudioChunk(buffer);
   });
 
-  // Track cursor position for overlay rendering
+  // Track cursor position for overlay rendering.
+  //
+  // Electron's screen.getCursorScreenPoint() is broken on Linux X11 since
+  // v29 (electron/electron#42519): it returns one stale point forever, so
+  // the companion cursor would pin in place. On X11 we read the pointer
+  // directly from the X server (pure-JS x11 client) and convert physical
+  // pixels to DIPs; elsewhere the Electron API still works.
+  const isX11 = process.platform === 'linux' && !!process.env.DISPLAY;
+  const cursorSource = isX11
+    ? new X11CursorSource(process.env.DISPLAY!)
+    : null;
   setInterval(() => {
-    const pos = screen.getCursorScreenPoint();
-    sendToOverlays(IPC.CURSOR_POSITION, pos);
+    let pos: { x: number; y: number } | null = null;
+    if (cursorSource) {
+      const raw = cursorSource.poll();
+      // X11 QueryPointer returns physical pixels; convert to DIPs manually
+      // because Electron's screenToDipPoint/screenToDipRect are win32-only.
+      if (raw) {
+        const display = screen.getDisplayMatching({ x: raw.x, y: raw.y, width: 1, height: 1 });
+        pos = { x: raw.x / display.scaleFactor, y: raw.y / display.scaleFactor };
+      }
+    } else {
+      pos = screen.getCursorScreenPoint();
+    }
+    if (pos) sendToOverlays(IPC.CURSOR_POSITION, pos);
   }, 16); // ~60fps
 
   // Poll permissions
