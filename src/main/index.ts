@@ -8,12 +8,21 @@ import * as chatHistory from './services/chat-history-store';
 import * as settingsStore from './services/settings-store';
 import { setApiKey, getApiKey, deleteApiKey } from './services/key-store';
 import { OllamaAPI } from './services/ollama-api';
+import { initGpuGuard, confirmGpuHealthy } from './services/gpu-guard';
 import { randomUUID } from 'crypto';
 
 // Prevent multiple instances
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
+}
+
+// Must run before the app is ready: the switches it may set only apply
+// pre-ready, and the GPU failure it counts happens during startup, so
+// the listener has to exist before then. Gated on the instance lock so
+// a duplicate launch that's about to quit never touches the counter.
+if (gotLock) {
+  initGpuGuard();
 }
 
 let tray: Tray | null = null;
@@ -104,6 +113,8 @@ function sendToAll(channel: string, ...args: unknown[]): void {
 // ── App Lifecycle ──────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
+  confirmGpuHealthy();
+
   // Initialize companion manager
   companion = new CompanionManager({
     onVoiceStateChanged: (state) => {
