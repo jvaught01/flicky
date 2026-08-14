@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { VoiceState, DetectedElement } from '../../shared/types';
+import type { VoiceState, DetectedElement, DisplayInfo } from '../../shared/types';
 import { Waveform } from './Waveform';
 
 // Offset the companion cursor ~1/5 inch (≈19px at 96dpi) down-right
@@ -32,7 +32,9 @@ export function OverlayApp() {
   const [cursorMode, setCursorMode] = useState<CursorMode>('following');
   const [companionPos, setCompanionPos] = useState({ x: 0, y: 0 });
   const [isCursorOnThisDisplay, setIsCursorOnThisDisplay] = useState(false);
-  const displayRef = useRef<{ id: number; bounds: { x: number; y: number; width: number; height: number } } | null>(null);
+  // Seeded synchronously from the window's launch arguments so the first
+  // cursor-position message already has a coordinate space to map into.
+  const displayRef = useRef<DisplayInfo | null>(window.flicky.getDisplayInfo());
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const returnAnimRef = useRef<number | null>(null);
   const cursorPosRef = useRef({ x: 0, y: 0 });
@@ -195,7 +197,7 @@ export function OverlayApp() {
 
   useEffect(() => {
     const unsubDisplayInfo = window.flicky.onDisplayInfo((info) => {
-      displayRef.current = { id: info.id, bounds: info.bounds };
+      displayRef.current = info;
     });
 
     const unsubs = [
