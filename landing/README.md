@@ -1,6 +1,6 @@
 # Flicky landing page
 
-Next.js 15 static site for [flicky](https://github.com/jvaught01/flicky).
+Next.js 16 static site for [flicky](https://github.com/pango07/flicky).
 Built as a static export so it can be dropped onto GitHub Pages, Vercel,
 Netlify, Cloudflare Pages, or any plain static host.
 
