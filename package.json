@@ -1,6 +1,6 @@
 {
   "name": "flicky",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Cross-platform AI companion — voice-driven, screen-aware assistant with a pointing cursor overlay",
   "main": "dist/main/main/index.js",
   "author": {
@@ -26,11 +26,10 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
-    "posthog-node": "^4.0.0",
-    "ws": "^8.18.0"
+    "@nut-tree-fork/nut-js": "^4.2.6",
+    "posthog-node": "^4.0.0"
   },
   "devDependencies": {
-    "@types/ws": "^8.5.0",
     "@electron/notarize": "^2.5.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -62,8 +61,14 @@
       "category": "public.app-category.productivity",
       "icon": "assets/icon.icns",
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] },
-        { "target": "zip", "arch": ["x64", "arm64"] }
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
       ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
@@ -78,7 +83,10 @@
     "win": {
       "icon": "assets/icon.ico",
       "target": [
-        { "target": "nsis", "arch": ["x64", "arm64"] }
+        {
+          "target": "nsis",
+          "arch": ["x64", "arm64"]
+        }
       ]
     },
     "nsis": {

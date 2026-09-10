@@ -1,12 +1,18 @@
 import { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, shell, nativeImage } from 'electron';
 import path from 'path';
 import { CompanionManager } from './companion-manager';
-import { createPanelWindow, createOverlayWindow, createStreamWindow } from './windows';
+import {
+  createPanelWindow,
+  createOverlayWindow,
+  createStreamWindow,
+  overlayDisplayByWebContents,
+} from './windows';
 import { IPC, type StreamVisibility, type StreamWindowBounds, type LocalConnection } from '../shared/types';
 import { AUDIO_IPC } from './services/audio-capture';
 import * as chatHistory from './services/chat-history-store';
 import * as settingsStore from './services/settings-store';
 import { setApiKey, getApiKey, deleteApiKey } from './services/key-store';
+import { validateApiKey, validateStoredApiKey } from './services/key-validation';
 import { OllamaAPI } from './services/ollama-api';
 import { initGpuGuard, confirmGpuHealthy } from './services/gpu-guard';
 import { randomUUID } from 'crypto';
@@ -16,6 +22,20 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 }
+// Flicky lives in the tray, so on Windows the natural thing to do when
+// you can't find it is to double-click the shortcut again. Without this
+// handler that second launch just exited and nothing visible happened —
+// which reads as "the app is broken". Surface the panel instead.
+app.on('second-instance', () => {
+  if (!companion) return;
+  if (panelWindow && !panelWindow.isDestroyed()) {
+    if (panelWindow.isMinimized()) panelWindow.restore();
+    panelWindow.show();
+    panelWindow.focus();
+  } else {
+    togglePanel();
+  }
+});
 
 // Must run before the app is ready: the switches it may set only apply
 // pre-ready, and the GPU failure it counts happens during startup, so
@@ -32,6 +52,27 @@ let streamWindow: BrowserWindow | null = null;
 let companion: CompanionManager;
 let isAppQuitting = false;
 let lastVoiceState = 'idle';
+/** Whether a walkthrough is currently playing (steps 1..N animating). */
+let walkthroughActive = false;
+/** webContents.id of the overlay receiving the active walkthrough. */
+let currentWalkthroughTargetWcId: number | null = null;
+/** Perms-poll lifecycle, controlled by panel visibility. */
+let permsTimer: ReturnType<typeof setInterval> | null = null;
+const startPermsPoll = (): void => {
+  if (permsTimer) return;
+  const tick = async (): Promise<void> => {
+    if (!companion) return;
+    const perms = await companion.getPermissions();
+    sendToPanel(IPC.PERMISSION_STATUS, perms);
+  };
+  void tick();
+  permsTimer = setInterval(() => { void tick(); }, 5000);
+};
+const stopPermsPoll = (): void => {
+  if (!permsTimer) return;
+  clearInterval(permsTimer);
+  permsTimer = null;
+};
 
 app.on('before-quit', () => { isAppQuitting = true; });
 
@@ -45,9 +86,15 @@ function createTrayIcon(): Electron.NativeImage {
   const size32 = path.join(assetRoot, 'icons', '32x32.png');
   const size16 = path.join(assetRoot, 'icons', '16x16.png');
 
-  const primary = process.platform === 'darwin' ? size32 : size16;
-
   try {
+    // Windows renders tray icons from a multi-size .ico crisply at any
+    // DPI; a 16px PNG gets upscaled and blurry at 125%/150% scaling.
+    if (process.platform === 'win32') {
+      const ico = nativeImage.createFromPath(path.join(assetRoot, 'icon.ico'));
+      if (!ico.isEmpty()) return ico;
+    }
+
+    const primary = process.platform === 'darwin' ? size32 : size16;
     const img = nativeImage.createFromPath(primary);
     if (img.isEmpty()) throw new Error('empty tray icon image');
 
@@ -98,6 +145,35 @@ function sendToOverlays(channel: string, ...args: unknown[]): void {
   }
 }
 
+/**
+ * Pick a single overlay to receive an event. Used for things that must
+ * not duplicate across displays — TTS audio playback being the canonical
+ * case (broadcasting to all overlays plays the buffer once per display
+ * and audibly doubles).
+ */
+function sendToOneOverlay(channel: string, ...args: unknown[]): void {
+  const target = overlayWindows.find((w) => !w.isDestroyed());
+  if (target) target.webContents.send(channel, ...args);
+}
+
+function sendToOverlayById(wcId: number, channel: string, ...args: unknown[]): void {
+  const target = overlayWindows.find((w) => !w.isDestroyed() && w.webContents.id === wcId);
+  if (target) target.webContents.send(channel, ...args);
+}
+
+function findOverlayContainingPoint(pos: { x: number; y: number }): BrowserWindow | undefined {
+  return overlayWindows.find((w) => {
+    if (w.isDestroyed()) return false;
+    const display = overlayDisplayByWebContents.get(w.webContents.id);
+    if (!display) return false;
+    const b = display.bounds;
+    return (
+      pos.x >= b.x && pos.x < b.x + b.width &&
+      pos.y >= b.y && pos.y < b.y + b.height
+    );
+  });
+}
+
 function sendToStream(channel: string, ...args: unknown[]): void {
   if (streamWindow && !streamWindow.isDestroyed()) {
     streamWindow.webContents.send(channel, ...args);
@@ -131,13 +207,67 @@ app.whenReady().then(() => {
       sendToPanel(IPC.AI_RESPONSE_COMPLETE, text);
       sendToStream(IPC.AI_RESPONSE_COMPLETE, text);
     },
-    onElementDetected: (el) => sendToOverlays(IPC.ELEMENT_DETECTED, el),
+    onError: (message) => {
+      sendToPanel(IPC.AI_ERROR, message);
+      sendToStream(IPC.AI_ERROR, message);
+    },
+    onWalkthrough: (w) => {
+      walkthroughActive = !!w;
+      // The walkthrough plays on exactly one display — the cursor
+      // display at the time of capture. Compute that target overlay
+      // up front and only send WALKTHROUGH / WALKTHROUGH_STEP to it.
+      // The other overlays would have ignored the events anyway via
+      // their `isStepOnThisDisplay` check; skipping the IPC saves
+      // wakeups on idle screens.
+      if (w && w.steps.length > 0) {
+        const first = w.steps[0];
+        const target = findOverlayContainingPoint({ x: first.x, y: first.y });
+        currentWalkthroughTargetWcId = target?.webContents.id ?? null;
+      } else {
+        currentWalkthroughTargetWcId = null;
+      }
+      if (currentWalkthroughTargetWcId !== null) {
+        sendToOverlayById(currentWalkthroughTargetWcId, IPC.WALKTHROUGH, w);
+      } else if (!w) {
+        // On clear with no known target, broadcast so any overlay holding
+        // stale walkthrough state resets cleanly.
+        sendToOverlays(IPC.WALKTHROUGH, w);
+      }
+      sendToStream(IPC.WALKTHROUGH, w);
+      // Keep the stream visible across the walkthrough in 'responses' mode,
+      // even after voice state has returned to idle. When the walkthrough
+      // ends we re-evaluate based on the current voice state.
+      if (w) applyStreamVisibility(companion.getSettings().streamVisibility);
+      else updateStreamForVoiceState(lastVoiceState);
+    },
+    onWalkthroughStep: (i) => {
+      if (currentWalkthroughTargetWcId !== null) {
+        sendToOverlayById(currentWalkthroughTargetWcId, IPC.WALKTHROUGH_STEP, i);
+      }
+      sendToStream(IPC.WALKTHROUGH_STEP, i);
+      // The walkthrough scheduler emits step `null` after the last step
+      // dwell, just before emitting walkthrough(null). Clear the
+      // active flag here too so a status reader doesn't briefly observe
+      // walkthroughActive=true with no current step.
+      if (i === null) walkthroughActive = false;
+    },
+    onTypeFulfilled: (req) => {
+      // Toast goes on a single overlay (cursor display) so the user
+      // sees one notification, not one per monitor.
+      sendToOneOverlay(IPC.TYPE_FULFILLED, req);
+      sendToStream(IPC.TYPE_FULFILLED, req);
+    },
     onSettingsChanged: (s) => sendToPanel(IPC.SETTINGS_CHANGED, s),
     onMemoryStatsChanged: (stats) => sendToPanel(IPC.MEMORY_STATS, stats),
     onChatEntryAdded: (entry) => sendToPanel(IPC.CHAT_ENTRY_ADDED, entry),
-    onStartAudioCapture: () => sendToOverlays(AUDIO_IPC.START_CAPTURE),
-    onStopAudioCapture: () => sendToOverlays(AUDIO_IPC.STOP_CAPTURE),
-    onPlayAudio: (buf) => sendToOverlays('play-audio', buf),
+    // Mic capture must NEVER fan out across overlays — each overlay
+    // would open its own getUserMedia + AudioContext and stream chunks
+    // back, which on a multi-monitor setup made companion-manager append
+    // the same audio N times into one buffer. Whisper then transcribed
+    // an interleaved mess. Single overlay only.
+    onStartAudioCapture: () => sendToOneOverlay(AUDIO_IPC.START_CAPTURE),
+    onStopAudioCapture: () => sendToOneOverlay(AUDIO_IPC.STOP_CAPTURE),
+    onPlayAudio: (buf) => sendToOneOverlay('play-audio', buf),
     onCursorVisibilityChanged: (enabled) => applyOverlayVisibility(enabled),
     onStreamVisibilityChanged: (v) => applyStreamVisibility(v),
   });
@@ -159,79 +289,122 @@ app.whenReady().then(() => {
     ]),
   );
 
-  // Create overlay windows for each display
+  // Create overlay windows for each display. Topology changes diff
+  // against the existing set so plugging in one new monitor doesn't
+  // tear down and rebuild every overlay (each rebuild has to reload
+  // the renderer bundle from scratch).
   rebuildOverlays();
-  screen.on('display-added', rebuildOverlays);
-  screen.on('display-removed', rebuildOverlays);
+  screen.on('display-added', () => syncOverlaysToDisplays());
+  screen.on('display-removed', () => syncOverlaysToDisplays());
+  // Resolution / DPI / arrangement changes (docking a laptop, changing
+  // scaling in Settings) keep the same display ids but move the bounds.
+  // Without this the overlay stayed at the stale rect, so the blue
+  // cursor pointed at the wrong spot or lived off-screen entirely.
+  screen.on('display-metrics-changed', (_e, display, changed) => {
+    if (!changed.some((c) => c === 'bounds' || c === 'scaleFactor' || c === 'workArea')) return;
+    syncOverlayBounds(display);
+  });
 
-  // Create the transparent stream window (hidden until the user opts in).
-  {
-    const settings = companion.getSettings();
-    streamWindow = createStreamWindow(settings.streamWindowBounds);
-    streamWindow.on('close', (e) => {
-      // Don't let the user actually close the stream — just hide it and
-      // flip the setting off so the toggle in General reflects reality.
-      if (!isAppQuitting) {
-        e.preventDefault();
-        streamWindow?.hide();
-        companion.setStreamVisibility('off');
-      }
-    });
-    streamWindow.on('moved', persistStreamBounds);
-    streamWindow.on('resized', persistStreamBounds);
-    applyStreamVisibility(settings.streamVisibility);
-  }
+  // Stream window is created lazily — the default `streamVisibility:'off'`
+  // means a fresh-install user used to have an entire Chromium renderer
+  // running in the background just to receive IPC nobody would ever see.
+  applyStreamVisibility(companion.getSettings().streamVisibility);
 
   // Sync the OS login-item state with our stored preference. Handles
   // the case where the user disables the login item externally (e.g.
   // via System Settings) — next launch reconciles the two.
-  try {
-    app.setLoginItemSettings({ openAtLogin: companion.getSettings().launchAtLogin });
-  } catch (err) {
-    console.error('[Flicky] initial setLoginItemSettings failed:', err);
+  // Skipped in dev: unpackaged it would register the bare electron
+  // binary as a startup item.
+  if (app.isPackaged) {
+    try {
+      app.setLoginItemSettings({ openAtLogin: companion.getSettings().launchAtLogin });
+    } catch (err) {
+      console.error('[Flicky] initial setLoginItemSettings failed:', err);
+    }
   }
 
   // Register global push-to-talk shortcut.
   //
-  // Windows/Linux: globalShortcut fires repeatedly on OS key-repeat while
-  // the accelerator is held, so we debounce — first press starts recording,
-  // subsequent repeats are ignored, and we stop after no fires for 250 ms
-  // (meaning the key was released).
+  // Two modes, chosen by the `pttMode` setting:
+  //   'hold'   — Windows/Linux only. globalShortcut fires repeatedly on
+  //              OS key-repeat while the accelerator is held; we start on
+  //              the first fire and stop after 250 ms of silence (release).
+  //   'toggle' — first tap starts, second tap stops. Required on macOS,
+  //              where globalShortcut fires exactly once per press and
+  //              Electron exposes no key-up event.
   //
-  // macOS: globalShortcut fires exactly once on press; the OS does not
-  // repeat global accelerators and Electron exposes no key-up event. We
-  // can't implement true press-and-hold without a native key-event hook,
-  // so fall back to toggle: first tap starts, second tap stops.
+  // On macOS we always behave as 'toggle' regardless of the stored setting,
+  // so a user who set 'hold' on another platform doesn't get a stuck mic.
+  const isMac = process.platform === 'darwin';
   let pttDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let pttActive = false;
+  /** Number of accelerator fires seen during the current hold. */
+  let pttFireCount = 0;
   let currentShortcut = '';
-  const isMac = process.platform === 'darwin';
+  /** Setup's "press your shortcut" check — see IPC.PTT_TEST_START. */
+  let pttTestMode = false;
+
+  // 'hold' timing. The OS doesn't start auto-repeating a held key until
+  // its repeat-delay elapses — on Windows that's 250 ms at the fastest
+  // setting and 1 s at the slowest (default ≈ 500 ms). The old fixed
+  // 250 ms silence window therefore expired *before the first repeat
+  // ever arrived*: recording stopped after a quarter second, a useless
+  // sliver of audio went to Whisper, then the repeat kicked in and
+  // started a brand-new turn — over and over while the key was held.
+  // Give the first repeat a generous window; once repeats are flowing
+  // (~30 Hz) a tight window is plenty.
+  const PTT_HOLD_INITIAL_GRACE_MS = 1100;
+  const PTT_HOLD_REPEAT_GRACE_MS = 250;
 
   const pttHandler = () => {
-    if (isMac) {
+    // Setup verification: prove the binding reaches us without
+    // actually opening the mic.
+    sendToPanel(IPC.PTT_SHORTCUT_FIRED);
+    if (pttTestMode) return;
+
+    const mode = isMac ? 'toggle' : companion.getSettings().pttMode;
+
+    if (mode === 'toggle') {
       if (!pttActive) {
         pttActive = true;
-        companion.startPushToTalk();
+        // If startPushToTalk's underlying transcription provider fails
+        // to initialise, companion silently flips isRecording back to
+        // false. Reconcile the local toggle so the next tap retries
+        // the start path instead of issuing a stop on nothing.
+        void companion.startPushToTalk().then(() => {
+          pttActive = companion.recording;
+        });
       } else {
         pttActive = false;
-        companion.stopPushToTalk();
+        void companion.stopPushToTalk().then(() => {
+          pttActive = companion.recording;
+        });
       }
       return;
     }
+
+    // 'hold' mode (Windows/Linux): rely on key-repeat, debounce on silence.
     if (pttDebounceTimer) {
       clearTimeout(pttDebounceTimer);
       pttDebounceTimer = null;
     }
     if (!pttActive) {
       pttActive = true;
-      companion.startPushToTalk();
+      pttFireCount = 0;
+      void companion.startPushToTalk();
     }
+    pttFireCount += 1;
+    const grace = pttFireCount === 1 ? PTT_HOLD_INITIAL_GRACE_MS : PTT_HOLD_REPEAT_GRACE_MS;
     pttDebounceTimer = setTimeout(() => {
       pttActive = false;
+      pttFireCount = 0;
       pttDebounceTimer = null;
-      companion.stopPushToTalk();
-    }, 250);
+      void companion.stopPushToTalk();
+    }, grace);
   };
+
+  ipcMain.on(IPC.PTT_TEST_START, () => { pttTestMode = true; });
+  ipcMain.on(IPC.PTT_TEST_STOP, () => { pttTestMode = false; });
 
   function registerPttShortcut(accelerator: string): boolean {
     const previous = currentShortcut;
@@ -279,6 +452,20 @@ app.whenReady().then(() => {
 
   ipcMain.handle(IPC.GET_SETTINGS, () => companion.getSettings());
   ipcMain.handle(IPC.GET_PERMISSIONS, () => companion.getPermissions());
+  ipcMain.handle(IPC.GET_APP_VERSION, () => app.getVersion());
+  ipcMain.handle(IPC.VALIDATE_API_KEY, (_e, name, key: string) => validateApiKey(name, key));
+  ipcMain.handle(IPC.VALIDATE_STORED_API_KEY, (_e, name) => validateStoredApiKey(name));
+
+  // Setup mic check: capture runs, levels flow to the panel, nothing is
+  // transcribed. The overlay owns the mic; relay its telemetry here.
+  ipcMain.on(IPC.MIC_TEST_START, () => companion.startMicTest());
+  ipcMain.on(IPC.MIC_TEST_STOP, () => companion.stopMicTest());
+  ipcMain.on(IPC.MIC_LEVEL, (_e, level: number) => sendToPanel(IPC.MIC_LEVEL, level));
+  ipcMain.on(IPC.MIC_ERROR, (_e, message: string) => {
+    console.error('[Flicky] mic capture error from overlay:', message);
+    sendToPanel(IPC.MIC_ERROR, message);
+    sendToPanel(IPC.AI_ERROR, `microphone unavailable — ${message}`);
+  });
 
   ipcMain.on(IPC.SET_MODEL, (_e, model) => companion.setModel(model));
   ipcMain.on(IPC.SET_OPENAI_MODEL, (_e, model) => companion.setOpenAIModel(model));
@@ -292,9 +479,13 @@ app.whenReady().then(() => {
   ipcMain.on(IPC.TOGGLE_CURSOR, (_e, enabled) => companion.toggleCursor(enabled));
   ipcMain.on(IPC.SET_LAUNCH_AT_LOGIN, (_e, enabled) => companion.setLaunchAtLogin(enabled));
   ipcMain.on(IPC.SET_PUSH_TO_TALK_SHORTCUT, (_e, accel: string) => companion.setPushToTalkShortcut(accel));
+  ipcMain.on(IPC.SET_PTT_MODE, (_e, mode) => companion.setPttMode(mode));
+  ipcMain.on(IPC.SET_AUTO_TYPE_ENABLED, (_e, enabled: boolean) => companion.setAutoTypeEnabled(enabled));
   ipcMain.on(IPC.SET_STREAM_VISIBILITY, (_e, v: StreamVisibility) => companion.setStreamVisibility(v));
   ipcMain.on(IPC.SET_STREAM_WINDOW_BOUNDS, (_e, b: StreamWindowBounds) => companion.setStreamWindowBounds(b));
-  ipcMain.on(IPC.CLEAR_STREAM, () => sendToStream(IPC.CLEAR_STREAM));
+  // (clearStream used to be a needless renderer→main→same-renderer
+  // round trip — the stream's "clear" button now updates its own
+  // state directly, no IPC.)
   ipcMain.on(IPC.REQUEST_PERMISSION, (_e, kind) => companion.requestPermission(kind));
   ipcMain.on(IPC.OPEN_EXTERNAL, (_e, url) => shell.openExternal(url));
   ipcMain.on(IPC.QUIT_APP, () => app.quit());
@@ -394,17 +585,40 @@ app.whenReady().then(() => {
     companion.handleAudioChunk(buffer);
   });
 
-  // Track cursor position for overlay rendering
+  // Track cursor position for overlay rendering. Three optimisations vs
+  // the naive 60-fps fanout:
+  //   1. Skip the entire poll when "Show cursor" is off.
+  //   2. 30 fps is plenty — the cursor companion has its own 50 ms CSS
+  //      transition, so doubling the rate just doubled the IPC traffic.
+  //   3. Only send to the overlay whose display the cursor is on. When
+  //      the cursor leaves a display we send one "off" pulse to the old
+  //      overlay so its `isCursorOnThisDisplay` state flips false; we
+  //      stop sending updates to it until the cursor re-enters.
+  let lastCursorTargetWcId: number | null = null;
   setInterval(() => {
+    if (!companion.getSettings().isClickyCursorEnabled) {
+      // If we previously had a target, tell it to clear so a stale
+      // companion cursor doesn't linger on the last screen.
+      if (lastCursorTargetWcId !== null) {
+        sendToOverlayById(lastCursorTargetWcId, IPC.CURSOR_POSITION, { x: -9999, y: -9999, off: true });
+        lastCursorTargetWcId = null;
+      }
+      return;
+    }
     const pos = screen.getCursorScreenPoint();
-    sendToOverlays(IPC.CURSOR_POSITION, pos);
-  }, 16); // ~60fps
+    const targetWin = findOverlayContainingPoint(pos);
+    const targetId = targetWin?.webContents.id ?? null;
+    if (targetId !== lastCursorTargetWcId && lastCursorTargetWcId !== null) {
+      sendToOverlayById(lastCursorTargetWcId, IPC.CURSOR_POSITION, { x: -9999, y: -9999, off: true });
+    }
+    if (targetWin) {
+      targetWin.webContents.send(IPC.CURSOR_POSITION, pos);
+    }
+    lastCursorTargetWcId = targetId;
+  }, 33);
 
-  // Poll permissions
-  setInterval(async () => {
-    const perms = await companion.getPermissions();
-    sendToPanel(IPC.PERMISSION_STATUS, perms);
-  }, 1500);
+  // Perms poll lifecycle is hoisted to module scope above; togglePanel()
+  // wires it to the panel window's show/hide events on first creation.
 
   // Open the main window on first launch.
   togglePanel();
@@ -423,18 +637,28 @@ app.on('window-all-closed', () => {
 
 // ── Window Management ──────────────────────────────────────────────────
 
+/** When the panel last lost focus — see togglePanel. */
+let panelBlurredAt = 0;
+
 function togglePanel(): void {
   if (panelWindow && !panelWindow.isDestroyed()) {
-    if (panelWindow.isVisible() && panelWindow.isFocused()) {
+    // On Windows, clicking the tray icon blurs the panel *before* our
+    // click handler runs, so `isFocused()` was always false and the tray
+    // could only ever show the panel, never hide it. Treat a blur in the
+    // last few hundred ms as "was focused when you clicked".
+    const recentlyFocused = Date.now() - panelBlurredAt < 400;
+    if (panelWindow.isVisible() && !panelWindow.isMinimized() && (panelWindow.isFocused() || recentlyFocused)) {
       panelWindow.hide();
       return;
     }
+    if (panelWindow.isMinimized()) panelWindow.restore();
     panelWindow.show();
     panelWindow.focus();
     return;
   }
 
   panelWindow = createPanelWindow();
+  panelWindow.on('blur', () => { panelBlurredAt = Date.now(); });
   panelWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
     console.error('[Flicky] Panel FAILED to load:', code, desc, url);
   });
@@ -445,6 +669,9 @@ function togglePanel(): void {
       panelWindow?.hide();
     }
   });
+  // Permissions polling is only useful while the banner can render.
+  panelWindow.on('show', startPermsPoll);
+  panelWindow.on('hide', stopPermsPoll);
 
   panelWindow.show();
   panelWindow.focus();
@@ -464,6 +691,61 @@ function rebuildOverlays(): void {
   applyOverlayVisibility(companion.getSettings().isClickyCursorEnabled);
 }
 
+/**
+ * Reconcile overlay windows with the current display topology. Only
+ * creates overlays for newly-added displays and destroys overlays for
+ * displays that are gone — leaves untouched overlays running so we
+ * don't reload all renderer bundles on every monitor change.
+ */
+function syncOverlaysToDisplays(): void {
+  const currentDisplays = screen.getAllDisplays();
+  const currentIds = new Set(currentDisplays.map((d) => d.id));
+
+  // Drop overlays whose display is gone.
+  const survivors: BrowserWindow[] = [];
+  for (const win of overlayWindows) {
+    const display = overlayDisplayByWebContents.get(win.webContents.id);
+    if (!display || !currentIds.has(display.id) || win.isDestroyed()) {
+      if (!win.isDestroyed()) win.destroy();
+      continue;
+    }
+    survivors.push(win);
+  }
+
+  // Add overlays for newly-attached displays.
+  const survivorDisplayIds = new Set(
+    survivors.map((w) => overlayDisplayByWebContents.get(w.webContents.id)?.id).filter((id): id is number => id !== undefined),
+  );
+  for (const display of currentDisplays) {
+    if (!survivorDisplayIds.has(display.id)) {
+      survivors.push(createOverlayWindow(display));
+    }
+  }
+
+  overlayWindows = survivors;
+  // Respect the persisted "Show cursor" setting — if the user has it
+  // turned off, the overlays are created but hidden so we can still
+  // route voice-state / element-detected events into their renderers
+  // without a visible window on screen.
+  applyOverlayVisibility(companion.getSettings().isClickyCursorEnabled);
+}
+
+/** Move an existing overlay to its display's new bounds after a metrics change. */
+function syncOverlayBounds(display: Electron.Display): void {
+  for (const win of overlayWindows) {
+    if (win.isDestroyed()) continue;
+    const tracked = overlayDisplayByWebContents.get(win.webContents.id);
+    if (!tracked || tracked.id !== display.id) continue;
+    win.setBounds(display.bounds);
+    overlayDisplayByWebContents.set(win.webContents.id, display);
+    win.webContents.send('display-info', {
+      id: display.id,
+      bounds: display.bounds,
+      scaleFactor: display.scaleFactor,
+    });
+  }
+}
+
 function applyOverlayVisibility(enabled: boolean): void {
   for (const win of overlayWindows) {
     if (win.isDestroyed()) continue;
@@ -476,34 +758,69 @@ function applyOverlayVisibility(enabled: boolean): void {
 }
 
 /**
+ * Lazily create the stream window. Returns the live BrowserWindow.
+ * The window is destroyed (not hidden) when the user sets visibility
+ * back to 'off', so calling this again will spin up a fresh instance.
+ */
+function ensureStreamWindow(): BrowserWindow {
+  if (streamWindow && !streamWindow.isDestroyed()) return streamWindow;
+  const bounds = companion.getSettings().streamWindowBounds;
+  streamWindow = createStreamWindow(bounds);
+  streamWindow.on('close', (e) => {
+    if (!isAppQuitting) {
+      e.preventDefault();
+      streamWindow?.hide();
+      companion.setStreamVisibility('off');
+    }
+  });
+  streamWindow.on('moved', persistStreamBounds);
+  streamWindow.on('resized', persistStreamBounds);
+  return streamWindow;
+}
+
+function destroyStreamWindow(): void {
+  if (!streamWindow) return;
+  if (!streamWindow.isDestroyed()) {
+    // The 'close' handler intercepts user closes and re-shows + flips the
+    // visibility setting; we want a real teardown here, so destroy directly.
+    streamWindow.destroy();
+  }
+  streamWindow = null;
+}
+
+/**
  * Show or hide the stream window based on the current visibility
  * setting. 'responses' mode is refined further by updateStreamForVoiceState
  * which flicks it on when Flicky is thinking / speaking.
  */
 function applyStreamVisibility(v: StreamVisibility): void {
-  if (!streamWindow || streamWindow.isDestroyed()) return;
-  if (v === 'always') {
-    streamWindow.showInactive();
-  } else if (v === 'off') {
-    streamWindow.hide();
-  } else {
-    // 'responses' — reconcile with whatever Flicky is currently doing
-    // so switching *into* this mode immediately reflects the real state
-    // (hide if idle, show if mid-turn) instead of waiting for the next
-    // voice state transition.
-    updateStreamForVoiceState(lastVoiceState);
+  if (v === 'off') {
+    destroyStreamWindow();
+    return;
   }
+  if (v === 'always') {
+    ensureStreamWindow().showInactive();
+    return;
+  }
+  // 'responses' — reconcile with whatever Flicky is currently doing
+  // so switching *into* this mode immediately reflects the real state.
+  // We don't pre-create the window here; updateStreamForVoiceState will
+  // spin it up the first time something happens worth showing.
+  updateStreamForVoiceState(lastVoiceState);
 }
 
 function updateStreamForVoiceState(state: string): void {
-  if (!streamWindow || streamWindow.isDestroyed()) return;
   const v = companion.getSettings().streamVisibility;
   if (v !== 'responses') return;
-  const active = state === 'listening' || state === 'processing' || state === 'responding';
+  const active =
+    state === 'listening' ||
+    state === 'processing' ||
+    state === 'responding' ||
+    walkthroughActive;
   if (active) {
-    streamWindow.showInactive();
+    ensureStreamWindow().showInactive();
   } else if (state === 'idle') {
-    streamWindow.hide();
+    if (streamWindow && !streamWindow.isDestroyed()) streamWindow.hide();
   }
 }
 

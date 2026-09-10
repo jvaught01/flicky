@@ -1,11 +1,12 @@
-import { app, systemPreferences, shell, desktopCapturer } from 'electron';
+import { app, systemPreferences, shell, desktopCapturer, clipboard } from 'electron';
 import { ClaudeAPI } from './services/claude-api';
 import { OpenAIAPI } from './services/openai-api';
 import { OllamaAPI } from './services/ollama-api';
 import { ElevenLabsTTS } from './services/elevenlabs-tts';
 import { createTranscriptionProvider, type TranscriptionProvider } from './services/transcription';
 import { captureAllDisplays } from './services/screen-capture';
-import { parsePointTags } from './services/element-detector';
+import { parseAllPointTags, parseTypeTags, TAG_STRIP_REGEX } from './services/element-detector';
+import { typeText, isAccessibilityGranted, promptAccessibility } from './services/auto-typer';
 import { ContextManager } from './services/context-manager';
 import * as settingsStore from './services/settings-store';
 import * as keyStore from './services/key-store';
@@ -19,7 +20,9 @@ import type {
   MindProvider,
   GroqTranscriptionModel,
   TranscriptionResult,
-  DetectedElement,
+  Walkthrough,
+  PttMode,
+  TypeRequest,
   ScreenCapture,
   ApiKeyName,
   ReasoningDepth,
@@ -28,6 +31,7 @@ import type {
   ChatEntry,
   StreamVisibility,
   StreamWindowBounds,
+  PermissionStatus,
 } from '../shared/types';
 
 export interface CompanionCallbacks {
@@ -35,7 +39,17 @@ export interface CompanionCallbacks {
   onTranscriptUpdate: (result: TranscriptionResult) => void;
   onAiResponseChunk: (chunk: string) => void;
   onAiResponseComplete: (fullText: string) => void;
-  onElementDetected: (element: DetectedElement | null) => void;
+  /**
+   * A turn failed somewhere in mic → transcription → model → TTS.
+   * Previously these only went to the console, which on a packaged
+   * Windows build means nobody ever saw them — the app just went
+   * quiet. Surfaced to the panel / stream so the user learns *why*.
+   */
+  onError: (message: string) => void;
+  onWalkthrough: (walkthrough: Walkthrough | null) => void;
+  /** Active step index (0-based) inside the current walkthrough, or null when idle. */
+  onWalkthroughStep: (index: number | null) => void;
+  onTypeFulfilled: (request: TypeRequest) => void;
   onSettingsChanged: (settings: FlickySettings) => void;
   onMemoryStatsChanged: (stats: MemoryStats) => void;
   onChatEntryAdded: (entry: ChatEntry) => void;
@@ -59,6 +73,12 @@ export class CompanionManager {
   private voiceState: VoiceState = 'idle';
   private lastScreenshots: ScreenCapture[] = [];
   private isRecording = false;
+
+  /** Public read-only view used by main's PTT handler to keep its
+   *  toggle state in sync after a failed start. */
+  get recording(): boolean {
+    return this.isRecording;
+  }
   private reRegisterShortcut: ((accel: string) => boolean) | null = null;
   /**
    * Monotonic turn counter. A new PTT press bumps this; any still-running
@@ -67,6 +87,8 @@ export class CompanionManager {
    */
   private turnId = 0;
   private currentAbort: AbortController | null = null;
+  /** Pending walkthrough step timers, cleared on new turn or end-of-walkthrough. */
+  private walkthroughTimers: ReturnType<typeof setTimeout>[] = [];
   /**
    * If startRecording is in flight, other callers (typically a quick-release
    * stopPushToTalk) await this before deciding whether to stop. Without it,
@@ -74,6 +96,12 @@ export class CompanionManager {
    * leave the mic running forever.
    */
   private pendingStart: Promise<void> | null = null;
+  /**
+   * Setup's mic check runs capture without a transcription provider.
+   * While true, audio chunks are dropped here; the overlay still emits
+   * level events that the panel visualises.
+   */
+  private micTestActive = false;
 
   constructor(callbacks: CompanionCallbacks) {
     this.callbacks = callbacks;
@@ -186,6 +214,22 @@ export class CompanionManager {
     this.emitSettings();
   }
 
+  setPttMode(mode: PttMode): void {
+    settingsStore.set('pttMode', mode);
+    this.emitSettings();
+  }
+
+  setAutoTypeEnabled(enabled: boolean): void {
+    settingsStore.set('autoTypeEnabled', enabled);
+    // Flipping the toggle on is the right moment to nudge the user
+    // through the macOS Accessibility prompt — they just expressed
+    // intent to grant. No-op on other platforms / when already trusted.
+    if (enabled && !isAccessibilityGranted()) {
+      promptAccessibility();
+    }
+    this.emitSettings();
+  }
+
   setLaunchAtLogin(enabled: boolean): void {
     settingsStore.set('launchAtLogin', enabled);
     try {
@@ -281,19 +325,45 @@ export class CompanionManager {
 
   // ── Permissions ──────────────────────────────────────────────────────
 
-  async getPermissions(): Promise<Record<string, boolean>> {
-    const perms: Record<string, boolean> = { microphone: false, screen: false };
+  async getPermissions(): Promise<PermissionStatus> {
+    const perms: PermissionStatus = {
+      microphone: true,
+      screen: true,
+      accessibility: true,
+      microphoneStatus: 'unknown',
+    };
     if (process.platform === 'darwin') {
-      perms.microphone = systemPreferences.getMediaAccessStatus('microphone') === 'granted';
+      const mic = systemPreferences.getMediaAccessStatus('microphone');
+      perms.microphoneStatus = mic;
+      perms.microphone = mic === 'granted';
       perms.screen = systemPreferences.getMediaAccessStatus('screen') === 'granted';
-    } else {
-      perms.microphone = true;
-      perms.screen = true;
+      perms.accessibility = isAccessibilityGranted();
+    } else if (process.platform === 'win32') {
+      // Windows 10/11 gate desktop-app microphone access under
+      // Settings → Privacy → Microphone. When it's off, getUserMedia in
+      // the overlay fails and Flicky silently hears nothing — the #1
+      // "it doesn't work" report. Electron exposes the same status
+      // query on Windows, so surface it.
+      try {
+        const mic = systemPreferences.getMediaAccessStatus('microphone');
+        perms.microphoneStatus = mic;
+        perms.microphone = mic === 'granted' || mic === 'not-determined';
+      } catch (err) {
+        console.error('[Flicky] mic status probe failed:', err);
+      }
     }
     return perms;
   }
 
   async requestPermission(kind: string): Promise<void> {
+    if (process.platform === 'win32') {
+      if (kind === 'microphone') {
+        // Deeplink straight to the privacy pane; the toggles there are
+        // "Microphone access" and "Let desktop apps access your microphone".
+        void shell.openExternal('ms-settings:privacy-microphone');
+      }
+      return;
+    }
     if (process.platform !== 'darwin') return;
 
     if (kind === 'microphone') {
@@ -307,6 +377,18 @@ export class CompanionManager {
           'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
         );
       }
+      return;
+    }
+
+    if (kind === 'accessibility') {
+      // Calling with `true` adds Flicky to the Accessibility list and
+      // surfaces the OS dialog. The user still has to flip the checkbox
+      // themselves; we deeplink to the right pane in case the dialog
+      // got dismissed.
+      promptAccessibility();
+      shell.openExternal(
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
+      );
       return;
     }
 
@@ -360,6 +442,62 @@ export class CompanionManager {
     await this.stopRecordingAndProcess();
   }
 
+  // ── Mic check (setup) ────────────────────────────────────────────────
+
+  startMicTest(): void {
+    if (this.isRecording || this.micTestActive) return;
+    this.micTestActive = true;
+    this.callbacks.onStartAudioCapture();
+  }
+
+  stopMicTest(): void {
+    if (!this.micTestActive) return;
+    this.micTestActive = false;
+    // Don't yank the mic out from under a real PTT turn that started
+    // while the test was running.
+    if (!this.isRecording) this.callbacks.onStopAudioCapture();
+  }
+
+  private clearWalkthroughTimers(): void {
+    for (const t of this.walkthroughTimers) clearTimeout(t);
+    this.walkthroughTimers = [];
+  }
+
+  /**
+   * Schedule a walkthrough so overlay + stream + any other surface stay
+   * in lockstep. Emits the full step list once, then a step index per
+   * step at computed times, then clears with `null` after the last step.
+   *
+   * Per-step dwell scales with caption length so longer instructions
+   * stay on screen long enough to read; floor of 2.6s, ceiling of 5.5s.
+   */
+  private startWalkthrough(walkthrough: Walkthrough, isCurrent: () => boolean): void {
+    this.clearWalkthroughTimers();
+    this.callbacks.onWalkthrough(walkthrough);
+
+    const dwellFor = (label: string): number =>
+      Math.max(2600, Math.min(5500, 1800 + label.length * 80));
+
+    let cursor = 0;
+    walkthrough.steps.forEach((step, i) => {
+      const start = cursor;
+      const t = setTimeout(() => {
+        if (!isCurrent()) return;
+        this.callbacks.onWalkthroughStep(i);
+      }, start);
+      this.walkthroughTimers.push(t);
+      cursor += dwellFor(step.label);
+    });
+
+    // After the last step has had its dwell, clear the walkthrough.
+    const endTimer = setTimeout(() => {
+      if (!isCurrent()) return;
+      this.callbacks.onWalkthroughStep(null);
+      this.callbacks.onWalkthrough(null);
+    }, cursor);
+    this.walkthroughTimers.push(endTimer);
+  }
+
   private async startRecording(): Promise<void> {
     // Bump the turn and abort any in-flight work from the previous one
     // so the user's new message supersedes whatever Flicky was doing.
@@ -368,6 +506,9 @@ export class CompanionManager {
       this.currentAbort.abort();
       this.currentAbort = null;
     }
+    this.clearWalkthroughTimers();
+    this.callbacks.onWalkthrough(null);
+    this.callbacks.onWalkthroughStep(null);
 
     this.isRecording = true;
     this.setVoiceState('listening');
@@ -382,11 +523,16 @@ export class CompanionManager {
 
     try {
       await this.transcriptionProvider.start();
+      // A setup mic check may already hold the capture open; starting
+      // again is harmless (the overlay just re-opens the gate).
+      this.micTestActive = false;
       this.callbacks.onStartAudioCapture();
     } catch (err) {
       console.error('Failed to start transcription:', err);
       this.setVoiceState('idle');
       this.isRecording = false;
+      this.transcriptionProvider = null;
+      this.callbacks.onError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -400,7 +546,21 @@ export class CompanionManager {
       return;
     }
 
-    const result = await this.transcriptionProvider.stop();
+    // A failed upload (bad Groq key, offline, 4xx) used to throw straight
+    // out of here — nothing caught it, so the voice state stayed stuck on
+    // 'listening' and the next PTT press did nothing. Contain it.
+    let result: TranscriptionResult;
+    try {
+      result = await this.transcriptionProvider.stop();
+    } catch (err) {
+      console.error('Transcription failed:', err);
+      this.transcriptionProvider = null;
+      this.setVoiceState('idle');
+      this.callbacks.onError(
+        `couldn't transcribe that — ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
     this.transcriptionProvider = null;
 
     if (!result.text.trim()) {
@@ -417,6 +577,35 @@ export class CompanionManager {
     } catch (err) {
       console.error('Screen capture failed:', err);
       this.lastScreenshots = [];
+    }
+    if (this.lastScreenshots.length === 0) {
+      // Almost always means Screen Recording permission is missing on
+      // macOS — desktopCapturer returns empty thumbnails in that case.
+      // Surface a friendly response instead of letting an empty image
+      // 400 the upstream LLM call. Synthesize TTS too so the user
+      // hears the error even if their attention is on a different
+      // window than the panel.
+      const settings = settingsStore.getAll();
+      const msg = process.platform === 'darwin'
+        ? "i can't see your screen right now — give flicky screen recording permission in system settings, then quit and reopen the app."
+        : "i can't see your screen right now — screen capture failed.";
+      this.callbacks.onAiResponseChunk(msg);
+      this.callbacks.onAiResponseComplete(msg);
+      if (settings.speakReplies && keyStore.getKeyStatus().elevenlabs) {
+        this.setVoiceState('responding');
+        try {
+          const audioBuffer = await this.tts.synthesize(msg, {
+            voiceId: settings.voiceId,
+            speed: settings.voiceSpeed,
+            stability: settings.voiceStability,
+          });
+          this.callbacks.onPlayAudio(audioBuffer);
+        } catch (err) {
+          console.error('TTS error on screen-capture failure path:', err);
+        }
+      }
+      this.setVoiceState('idle');
+      return;
     }
 
     const settings = settingsStore.getAll();
@@ -447,7 +636,7 @@ export class CompanionManager {
         if (!isCurrent()) return;
         analytics.trackAiResponseReceived(fullText);
 
-        const cleanText = fullText.replace(/\[POINT:[^\]]+\]/g, '').trim();
+        const cleanText = fullText.replace(TAG_STRIP_REGEX, '').trim();
         this.callbacks.onAiResponseComplete(cleanText);
 
         await this.context.recordExchange(result.text, cleanText, {
@@ -463,10 +652,40 @@ export class CompanionManager {
         });
         this.callbacks.onChatEntryAdded(entry);
 
-        const element = parsePointTags(fullText, this.lastScreenshots);
-        if (element) {
-          this.callbacks.onElementDetected(element);
-          analytics.trackElementPointed(element.label);
+        const walkthrough = parseAllPointTags(fullText, this.lastScreenshots);
+        if (walkthrough) {
+          console.log(
+            `[Flicky] Walkthrough: ${walkthrough.steps.length} step(s) →`,
+            walkthrough.steps.map((s) => `${s.step}/${s.total} "${s.label}"`).join(', '),
+          );
+          this.startWalkthrough(walkthrough, isCurrent);
+          analytics.trackElementPointed(
+            walkthrough.steps.length > 1
+              ? `${walkthrough.steps[0].label} (+${walkthrough.steps.length - 1} more)`
+              : walkthrough.steps[0].label,
+          );
+        }
+
+        // [TYPE:...] tags. If the user has opted into auto-typing AND
+        // the OS permission is in place, we send the keys directly via
+        // the native typer; otherwise we fall back to clipboard handoff.
+        // typeText() returns false on any failure so the user is never
+        // left with no way to act on the request.
+        const typeTexts = parseTypeTags(fullText);
+        for (const text of typeTexts) {
+          if (!text) continue;
+          const preview = text.length > 50 ? `${text.slice(0, 50)}…` : text;
+          let autoTyped = false;
+          if (settings.autoTypeEnabled) {
+            autoTyped = await typeText(text);
+          }
+          if (!autoTyped) {
+            clipboard.writeText(text);
+          }
+          console.log(
+            `[Flicky] Type request → ${autoTyped ? 'auto-typed' : 'clipboard'}: "${preview}"`,
+          );
+          this.callbacks.onTypeFulfilled({ text, preview, autoTyped });
         }
 
         if (settings.speakReplies && keyStore.getKeyStatus().elevenlabs) {
@@ -489,15 +708,13 @@ export class CompanionManager {
 
         if (!isCurrent()) return;
         this.setVoiceState('idle');
-        setTimeout(() => {
-          if (isCurrent()) this.callbacks.onElementDetected(null);
-        }, 6000);
       },
       onError: (err: Error) => {
         if (!isCurrent()) return;
         console.error('Mind provider error:', err);
         analytics.trackResponseError(err.message);
         this.setVoiceState('idle');
+        this.callbacks.onError(err.message);
       },
     };
 
@@ -559,6 +776,7 @@ export class CompanionManager {
   }
 
   handleAudioChunk(buffer: Buffer): void {
+    if (!this.isRecording) return;
     this.transcriptionProvider?.sendAudio(buffer);
   }
 

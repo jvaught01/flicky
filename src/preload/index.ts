@@ -9,9 +9,11 @@ import type {
   FlickySettings,
   VoiceState,
   TranscriptionResult,
-  DetectedElement,
+  Walkthrough,
+  TypeRequest,
   ReasoningDepth,
   ReplyTone,
+  PttMode,
   MemoryStats,
   ChatEntry,
   StreamVisibility,
@@ -19,6 +21,8 @@ import type {
   LocalConnection,
   OllamaModelInfo,
   OllamaPullProgress,
+  ApiKeyValidation,
+  PermissionStatus,
   DisplayInfo,
 } from '../shared/types';
 import type { OllamaTestResult } from '../main/services/ollama-api';
@@ -42,6 +46,12 @@ const initialDisplayInfo: DisplayInfo | null = (() => {
 })();
 
 const api = {
+  // The host platform, resolved at runtime in the main process so it's
+  // correct even when the renderer was cross-compiled (a CI build of a
+  // macOS dmg on Linux would otherwise leak the build host's platform
+  // through Vite's compile-time `define`).
+  platform: process.platform as NodeJS.Platform,
+
   // ── Settings ───────────────────────────────────────────────────────
   getSettings: (): Promise<FlickySettings> => ipcRenderer.invoke(IPC.GET_SETTINGS),
 
@@ -64,15 +74,16 @@ const api = {
     ipcRenderer.send(IPC.SET_STREAM_VISIBILITY, v),
   setStreamWindowBounds: (b: StreamWindowBounds): void =>
     ipcRenderer.send(IPC.SET_STREAM_WINDOW_BOUNDS, b),
-  clearStream: (): void => ipcRenderer.send(IPC.CLEAR_STREAM),
   setPushToTalkShortcut: (accel: string): void => ipcRenderer.send(IPC.SET_PUSH_TO_TALK_SHORTCUT, accel),
+  setPttMode: (mode: PttMode): void => ipcRenderer.send(IPC.SET_PTT_MODE, mode),
+  setAutoTypeEnabled: (enabled: boolean): void => ipcRenderer.send(IPC.SET_AUTO_TYPE_ENABLED, enabled),
   suspendPushToTalkShortcut: (): void => ipcRenderer.send(IPC.SUSPEND_PUSH_TO_TALK_SHORTCUT),
   resumePushToTalkShortcut: (): void => ipcRenderer.send(IPC.RESUME_PUSH_TO_TALK_SHORTCUT),
 
   playVoicePreview: (voiceId: string): void => ipcRenderer.send(IPC.PLAY_VOICE_PREVIEW, voiceId),
 
   // ── Permissions ────────────────────────────────────────────────────
-  getPermissions: (): Promise<Record<string, boolean>> => ipcRenderer.invoke(IPC.GET_PERMISSIONS),
+  getPermissions: (): Promise<PermissionStatus> => ipcRenderer.invoke(IPC.GET_PERMISSIONS),
   requestPermission: (kind: string): void => ipcRenderer.send(IPC.REQUEST_PERMISSION, kind),
 
   // ── API Keys ───────────────────────────────────────────────────────
@@ -80,6 +91,41 @@ const api = {
   deleteApiKey: (name: ApiKeyName): void => ipcRenderer.send(IPC.DELETE_API_KEY, name),
   getApiKeyStatus: (): Promise<Record<ApiKeyName, boolean>> =>
     ipcRenderer.invoke(IPC.GET_API_KEY_STATUS),
+  validateApiKey: (name: ApiKeyName, value: string): Promise<ApiKeyValidation> =>
+    ipcRenderer.invoke(IPC.VALIDATE_API_KEY, name, value),
+  validateStoredApiKey: (name: ApiKeyName): Promise<ApiKeyValidation> =>
+    ipcRenderer.invoke(IPC.VALIDATE_STORED_API_KEY, name),
+
+  // ── Setup verification ─────────────────────────────────────────────
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke(IPC.GET_APP_VERSION),
+  startPttTest: (): void => ipcRenderer.send(IPC.PTT_TEST_START),
+  stopPttTest: (): void => ipcRenderer.send(IPC.PTT_TEST_STOP),
+  startMicTest: (): void => ipcRenderer.send(IPC.MIC_TEST_START),
+  stopMicTest: (): void => ipcRenderer.send(IPC.MIC_TEST_STOP),
+  /** Overlay → main: current input level (0..1). */
+  reportMicLevel: (level: number): void => ipcRenderer.send(IPC.MIC_LEVEL, level),
+  /** Overlay → main: getUserMedia / AudioContext failure. */
+  reportMicError: (message: string): void => ipcRenderer.send(IPC.MIC_ERROR, message),
+  onPttShortcutFired: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on(IPC.PTT_SHORTCUT_FIRED, handler);
+    return () => ipcRenderer.removeListener(IPC.PTT_SHORTCUT_FIRED, handler);
+  },
+  onMicLevel: (cb: (level: number) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, level: number) => cb(level);
+    ipcRenderer.on(IPC.MIC_LEVEL, handler);
+    return () => ipcRenderer.removeListener(IPC.MIC_LEVEL, handler);
+  },
+  onMicError: (cb: (message: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, message: string) => cb(message);
+    ipcRenderer.on(IPC.MIC_ERROR, handler);
+    return () => ipcRenderer.removeListener(IPC.MIC_ERROR, handler);
+  },
+  onAiError: (cb: (message: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, message: string) => cb(message);
+    ipcRenderer.on(IPC.AI_ERROR, handler);
+    return () => ipcRenderer.removeListener(IPC.AI_ERROR, handler);
+  },
 
   // ── Memory / context ───────────────────────────────────────────────
   getMemoryStats: (): Promise<MemoryStats> => ipcRenderer.invoke(IPC.GET_MEMORY_STATS),
@@ -163,10 +209,22 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.AI_RESPONSE_COMPLETE, handler);
   },
 
-  onElementDetected: (cb: (element: DetectedElement | null) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, el: DetectedElement | null) => cb(el);
-    ipcRenderer.on(IPC.ELEMENT_DETECTED, handler);
-    return () => ipcRenderer.removeListener(IPC.ELEMENT_DETECTED, handler);
+  onWalkthrough: (cb: (walkthrough: Walkthrough | null) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, w: Walkthrough | null) => cb(w);
+    ipcRenderer.on(IPC.WALKTHROUGH, handler);
+    return () => ipcRenderer.removeListener(IPC.WALKTHROUGH, handler);
+  },
+
+  onWalkthroughStep: (cb: (index: number | null) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, i: number | null) => cb(i);
+    ipcRenderer.on(IPC.WALKTHROUGH_STEP, handler);
+    return () => ipcRenderer.removeListener(IPC.WALKTHROUGH_STEP, handler);
+  },
+
+  onTypeFulfilled: (cb: (req: TypeRequest) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, req: TypeRequest) => cb(req);
+    ipcRenderer.on(IPC.TYPE_FULFILLED, handler);
+    return () => ipcRenderer.removeListener(IPC.TYPE_FULFILLED, handler);
   },
 
   onCursorPosition: (cb: (pos: { x: number; y: number }) => void) => {
@@ -181,8 +239,8 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.SETTINGS_CHANGED, handler);
   },
 
-  onPermissionStatus: (cb: (perms: Record<string, boolean>) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, perms: Record<string, boolean>) => cb(perms);
+  onPermissionStatus: (cb: (perms: PermissionStatus) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, perms: PermissionStatus) => cb(perms);
     ipcRenderer.on(IPC.PERMISSION_STATUS, handler);
     return () => ipcRenderer.removeListener(IPC.PERMISSION_STATUS, handler);
   },
@@ -197,12 +255,6 @@ const api = {
     const handler = (_e: Electron.IpcRendererEvent, entry: ChatEntry) => cb(entry);
     ipcRenderer.on(IPC.CHAT_ENTRY_ADDED, handler);
     return () => ipcRenderer.removeListener(IPC.CHAT_ENTRY_ADDED, handler);
-  },
-
-  onClearStream: (cb: () => void) => {
-    const handler = () => cb();
-    ipcRenderer.on(IPC.CLEAR_STREAM, handler);
-    return () => ipcRenderer.removeListener(IPC.CLEAR_STREAM, handler);
   },
 
   // ── Audio Capture (overlay ↔ main) ──────────────────────────────────

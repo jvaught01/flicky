@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ApiKeyName } from '../../../shared/types';
+import { KeyEntry } from './KeyEntry';
 
 interface ProviderKeyProps {
   name: ApiKeyName;
@@ -26,24 +27,7 @@ export function ProviderKey({
   hideProviderHeader,
 }: ProviderKeyProps) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState('');
-
-  const save = () => {
-    const v = value.trim();
-    if (!v) return;
-    window.flicky.setApiKey(name, v);
-    setValue('');
-    setEditing(false);
-  };
   const remove = () => window.flicky.deleteApiKey(name);
-
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') save();
-    else if (e.key === 'Escape') {
-      setValue('');
-      setEditing(false);
-    }
-  };
 
   return (
     <>
@@ -71,18 +55,12 @@ export function ProviderKey({
           </div>
         </>
       ) : editing ? (
-        <div className="key-input-row">
-          <input
-            type="password"
-            autoFocus
-            placeholder={keyPlaceholder}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={onKeyDown}
-          />
-          <button className="btn xs primary" onClick={save} disabled={!value.trim()}>Save</button>
-          <button className="btn xs subtle" onClick={() => { setEditing(false); setValue(''); }}>Cancel</button>
-        </div>
+        <KeyEntry
+          name={name}
+          placeholder={keyPlaceholder}
+          onSaved={() => setEditing(false)}
+          onCancel={() => setEditing(false)}
+        />
       ) : (
         <>
           <div className="mask empty">not configured</div>

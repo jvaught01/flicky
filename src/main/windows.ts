@@ -39,10 +39,17 @@ export function createPanelWindow(): BrowserWindow {
     transparent: false,
     backgroundColor: '#0f0f11',
     title: 'Flicky',
+    // Windows/Linux otherwise show Electron's stock "File Edit View
+    // Window Help" bar above the panel. Alt still reveals it.
+    autoHideMenuBar: true,
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,
       nodeIntegration: false,
+      // sandbox: true caused renderers to fail to render (blank screen)
+      // — likely a require-resolution issue with our relative preload
+      // path. Reverted; we'd need to bundle the preload as a single
+      // self-contained file (esbuild) before flipping this on safely.
       sandbox: false,
     },
   });
@@ -50,6 +57,15 @@ export function createPanelWindow(): BrowserWindow {
   loadPage(win, 'panel');
   return win;
 }
+
+/**
+ * Maps each overlay's webContents id back to the Display it covers, so
+ * `ipcMain.handle('get-display-info')` in main/index.ts can answer the
+ * renderer's request based on which window the IPC came from. Solved
+ * the race where the renderer's display-info listener attaches after
+ * the one-shot push has already fired.
+ */
+export const overlayDisplayByWebContents = new Map<number, Display>();
 
 function toDisplayInfo(display: Display): DisplayInfo {
   return {
@@ -108,6 +124,16 @@ export function createOverlayWindow(display: Display): BrowserWindow {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   loadPage(win, 'overlay');
+
+  // Track which display this overlay covers so main can route cursor /
+  // walkthrough events to the right window and answer bounds changes.
+  // Capture the webContents id up front — by the time `closed` fires,
+  // the webContents has been destroyed and accessing `.id` throws.
+  const wcId = win.webContents.id;
+  overlayDisplayByWebContents.set(wcId, display);
+  win.on('closed', () => {
+    overlayDisplayByWebContents.delete(wcId);
+  });
 
   // Belt-and-braces: the preload already reads this same snapshot out of
   // argv on every load, including reloads, so this send is redundant

@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { VoiceState, DetectedElement, DisplayInfo } from '../../shared/types';
+import type { VoiceState, WalkthroughStep, TypeRequest, DisplayInfo } from '../../shared/types';
 import { Waveform } from './Waveform';
+
+// Vite resolves `new URL(..., import.meta.url)` at build time and emits
+// the worklet as a static asset. The `.js` file is hand-written plain
+// JS (worklets must be), so it isn't part of the TS compilation unit;
+// we only need its URL to feed `audioWorklet.addModule()`.
+const captureWorkletUrl = new URL('../audio-capture-worklet.js', import.meta.url).href;
 
 // Offset the companion cursor ~1/5 inch (≈19px at 96dpi) down-right
 // of the real mouse so the tip doesn't sit directly on top of it.
@@ -27,27 +33,37 @@ type CursorMode = 'following' | 'navigating' | 'holding' | 'returning';
 export function OverlayApp() {
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
-  const [detectedElement, setDetectedElement] = useState<DetectedElement | null>(null);
+  const [currentStep, setCurrentStep] = useState<WalkthroughStep | null>(null);
   const [pointingPhrase, setPointingPhrase] = useState('');
   const [cursorMode, setCursorMode] = useState<CursorMode>('following');
   const [companionPos, setCompanionPos] = useState({ x: 0, y: 0 });
   const [isCursorOnThisDisplay, setIsCursorOnThisDisplay] = useState(false);
+  const [typeToast, setTypeToast] = useState<TypeRequest | null>(null);
+  const typeToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Seeded synchronously from the window's launch arguments so the first
   // cursor-position message already has a coordinate space to map into.
   const displayRef = useRef<DisplayInfo | null>(window.flicky.getDisplayInfo());
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stepsRef = useRef<WalkthroughStep[]>([]);
   const returnAnimRef = useRef<number | null>(null);
   const cursorPosRef = useRef({ x: 0, y: 0 });
   const companionPosRef = useRef({ x: 0, y: 0 });
 
   // ── Mic capture ──────────────────────────────────────────────────────
+  // The audio graph (stream → AudioContext → AudioWorkletNode → destination)
+  // is built once on first PTT and kept warm across turns. Start/stop just
+  // toggles a flag inside the worklet so we don't pay getUserMedia or
+  // worklet-module-load latency on every press.
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const scriptNodeRef = useRef<ScriptProcessorNode | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
-  /** true while getUserMedia hasn't resolved yet. */
+  /** true while getUserMedia / addModule are in flight. */
   const micStartingRef = useRef(false);
-  /** set by stopMic so a pending start can abort before attaching. */
+  /** set by stopMic so a pending start can bail before attaching. */
   const micStopRequestedRef = useRef(false);
+  /** Peak RMS since the last level report; reported ~20×/s to main. */
+  const micPeakRef = useRef(0);
+  const micLevelSentAtRef = useRef(0);
 
   // ── TTS playback (cancelable) ───────────────────────────────────────
   const ttsRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
@@ -63,60 +79,99 @@ export function OverlayApp() {
   }, []);
 
   useEffect(() => {
-    const startMic = async () => {
-      // Ignore overlapping starts.
-      if (micStartingRef.current || mediaStreamRef.current) return;
+    const ensureGraph = async (): Promise<AudioWorkletNode | null> => {
+      if (workletNodeRef.current) return workletNodeRef.current;
+      if (micStartingRef.current) return null;
       micStartingRef.current = true;
       micStopRequestedRef.current = false;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true },
         });
-
-        // A stop may have arrived before getUserMedia resolved; if so,
-        // release the stream immediately instead of attaching it.
+        // If a stop arrived while we were waiting on getUserMedia, the
+        // user has already released the key. Don't bother building the
+        // graph; the next press will re-enter and rebuild.
         if (micStopRequestedRef.current) {
           stream.getTracks().forEach((t) => t.stop());
-          return;
+          return null;
         }
-
-        mediaStreamRef.current = stream;
-
         const ctx = new AudioContext({ sampleRate: 16000 });
-        audioCtxRef.current = ctx;
+        await ctx.audioWorklet.addModule(captureWorkletUrl);
         const source = ctx.createMediaStreamSource(stream);
-
-        const processor = ctx.createScriptProcessor(4096, 1, 1);
-        scriptNodeRef.current = processor;
-
-        processor.onaudioprocess = (e) => {
-          const float32 = e.inputBuffer.getChannelData(0);
-          const pcm16 = new Int16Array(float32.length);
-          for (let i = 0; i < float32.length; i++) {
-            const s = Math.max(-1, Math.min(1, float32[i]));
-            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        const node = new AudioWorkletNode(ctx, 'capture-processor');
+        node.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
+          // Cheap RMS so the panel's mic check (and any future meter)
+          // can show that sound is actually arriving. Throttled to
+          // ~20 Hz; the chunk itself is forwarded untouched.
+          const pcm = new Int16Array(e.data);
+          let sum = 0;
+          for (let i = 0; i < pcm.length; i++) {
+            const s = pcm[i] / 32768;
+            sum += s * s;
           }
-          window.flicky.sendAudioChunk(pcm16.buffer);
+          const rms = pcm.length ? Math.sqrt(sum / pcm.length) : 0;
+          if (rms > micPeakRef.current) micPeakRef.current = rms;
+          const now = performance.now();
+          if (now - micLevelSentAtRef.current > 50) {
+            micLevelSentAtRef.current = now;
+            // Speech RMS sits around 0.05–0.3; scale so normal talking
+            // fills most of the meter.
+            window.flicky.reportMicLevel(Math.min(1, micPeakRef.current * 4));
+            micPeakRef.current = 0;
+          }
+          window.flicky.sendAudioChunk(e.data);
         };
-
-        source.connect(processor);
-        processor.connect(ctx.destination);
+        // Pull-graph: source → worklet → destination. The worklet
+        // leaves its outputs zeroed when 'enabled', so connecting to
+        // destination is silent — we only need it so the audio engine
+        // schedules `process()`.
+        source.connect(node);
+        node.connect(ctx.destination);
+        mediaStreamRef.current = stream;
+        audioCtxRef.current = ctx;
+        workletNodeRef.current = node;
+        return node;
       } catch (err) {
-        console.error('[Flicky] Mic capture failed:', err);
+        console.error('[Flicky] Mic capture init failed:', err);
+        // Nobody reads the overlay's devtools console on a packaged
+        // build. Translate the DOMException into something a person can
+        // act on and hand it to main, which shows it in the panel.
+        const e = err as { name?: string; message?: string };
+        const friendly =
+          e.name === 'NotAllowedError' || e.name === 'SecurityError'
+            ? 'microphone access is blocked for Flicky. Allow it in your OS privacy settings.'
+            : e.name === 'NotFoundError' || e.name === 'OverconstrainedError'
+              ? 'no microphone was found. Plug one in or pick a default input device in your sound settings.'
+              : e.name === 'NotReadableError'
+                ? 'the microphone is busy or unreadable — another app may be holding it.'
+                : `${e.name ?? 'Error'}: ${e.message ?? String(err)}`;
+        window.flicky.reportMicError(friendly);
+        return null;
       } finally {
         micStartingRef.current = false;
       }
     };
 
+    const startMic = async () => {
+      // Reset the stop flag at the top so subsequent presses always
+      // get a fresh start signal. On the very first press, ensureGraph
+      // also resets this; on press 2+, ensureGraph short-circuits with
+      // the existing node and would never clear the flag — leaving it
+      // stuck `true` and silently bailing every subsequent call.
+      micStopRequestedRef.current = false;
+      const node = await ensureGraph();
+      // If a stop landed between ensureGraph resolving and now, don't
+      // open the gate — the worklet stays muted.
+      if (!node || micStopRequestedRef.current) return;
+      node.port.postMessage('start');
+    };
+
     const stopMic = () => {
-      // Flag for any in-flight startMic to bail before it attaches.
+      // Flag for any in-flight ensureGraph to bail before opening the
+      // gate. If the graph already exists, just mute the worklet —
+      // tearing down would force a fresh getUserMedia next turn.
       micStopRequestedRef.current = true;
-      scriptNodeRef.current?.disconnect();
-      scriptNodeRef.current = null;
-      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-      mediaStreamRef.current = null;
-      audioCtxRef.current?.close();
-      audioCtxRef.current = null;
+      workletNodeRef.current?.port.postMessage('stop');
     };
 
     const unsubStart = window.flicky.onStartCapture(() => startMic());
@@ -146,7 +201,18 @@ export function OverlayApp() {
       unsubStart();
       unsubStop();
       unsubPlayAudio();
-      stopMic();
+      // Real teardown on unmount — stopMic only mutes the worklet so
+      // back-to-back PTT turns stay warm. When the overlay actually
+      // goes away (display unplug, app quit) we release the mic and
+      // close the AudioContext.
+      micStopRequestedRef.current = true;
+      workletNodeRef.current?.port.postMessage('stop');
+      workletNodeRef.current?.disconnect();
+      workletNodeRef.current = null;
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+      void audioCtxRef.current?.close();
+      audioCtxRef.current = null;
     };
   }, []);
 
@@ -196,6 +262,8 @@ export function OverlayApp() {
   }, [cursorPos, cursorMode, setCompanionPosSync]);
 
   useEffect(() => {
+    // displayRef is seeded synchronously from launch args above; this
+    // push also carries bounds updates after a DPI / resolution change.
     const unsubDisplayInfo = window.flicky.onDisplayInfo((info) => {
       displayRef.current = info;
     });
@@ -203,6 +271,14 @@ export function OverlayApp() {
     const unsubs = [
       window.flicky.onVoiceStateChanged(setVoiceState),
       window.flicky.onCursorPosition((pos) => {
+        // Main now sends a `{ off: true }` pulse to whichever overlay
+        // previously owned the cursor when it leaves that display.
+        // We stop receiving regular updates entirely once the cursor
+        // is off-display, which is why this signal is needed at all.
+        if ((pos as { off?: boolean }).off) {
+          setIsCursorOnThisDisplay(false);
+          return;
+        }
         const bounds = displayRef.current?.bounds;
         if (bounds) {
           const onThis =
@@ -211,40 +287,60 @@ export function OverlayApp() {
           setIsCursorOnThisDisplay(onThis);
           setCursorPos({ x: pos.x - bounds.x, y: pos.y - bounds.y });
         } else {
-          setIsCursorOnThisDisplay(true);
+          // Bounds unknown — hide the companion rather than risk
+          // showing it on every display. Will flip on as soon as
+          // display-info arrives.
+          setIsCursorOnThisDisplay(false);
           setCursorPos(pos);
         }
       }),
-      window.flicky.onElementDetected((el) => {
-        if (el) {
-          if (returnAnimRef.current) {
-            cancelAnimationFrame(returnAnimRef.current);
-            returnAnimRef.current = null;
-          }
-          if (holdTimerRef.current) {
-            clearTimeout(holdTimerRef.current);
-            holdTimerRef.current = null;
-          }
-
-          setPointingPhrase(randomPhrase());
-          setDetectedElement(el);
-
-          const bounds = displayRef.current?.bounds;
-          const localTarget = {
-            x: el.x - (bounds?.x ?? 0),
-            y: el.y - (bounds?.y ?? 0),
-          };
-          setCompanionPosSync(localTarget);
-          setCursorModeSync('navigating');
-
-          setTimeout(() => setCursorModeSync('holding'), 650);
-        } else {
-          setDetectedElement(null);
+      window.flicky.onWalkthrough((w) => {
+        // Cache the steps. Main drives advancement via WALKTHROUGH_STEP.
+        if (returnAnimRef.current) {
+          cancelAnimationFrame(returnAnimRef.current);
+          returnAnimRef.current = null;
+        }
+        if (holdTimerRef.current) {
+          clearTimeout(holdTimerRef.current);
+          holdTimerRef.current = null;
+        }
+        if (!w) {
+          stepsRef.current = [];
+          setCurrentStep(null);
           holdTimerRef.current = setTimeout(() => {
             holdTimerRef.current = null;
             startReturnAnimation();
-          }, 3000);
+          }, 1500);
+          return;
         }
+        stepsRef.current = w.steps;
+      }),
+      window.flicky.onTypeFulfilled((req) => {
+        if (typeToastTimerRef.current) clearTimeout(typeToastTimerRef.current);
+        setTypeToast(req);
+        typeToastTimerRef.current = setTimeout(() => {
+          setTypeToast(null);
+          typeToastTimerRef.current = null;
+        }, 5000);
+      }),
+      window.flicky.onWalkthroughStep((i) => {
+        if (i === null) {
+          // Walkthrough ending — the WALKTHROUGH(null) event will
+          // schedule the return animation. Just clear current step UI.
+          setCurrentStep(null);
+          return;
+        }
+        const step = stepsRef.current[i];
+        if (!step) return;
+        setPointingPhrase(randomPhrase());
+        setCurrentStep(step);
+        const bounds = displayRef.current?.bounds;
+        setCompanionPosSync({
+          x: step.x - (bounds?.x ?? 0),
+          y: step.y - (bounds?.y ?? 0),
+        });
+        setCursorModeSync('navigating');
+        setTimeout(() => setCursorModeSync('holding'), 650);
       }),
     ];
 
@@ -252,6 +348,7 @@ export function OverlayApp() {
       unsubDisplayInfo();
       unsubs.forEach((u) => u());
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+      if (typeToastTimerRef.current) clearTimeout(typeToastTimerRef.current);
       if (returnAnimRef.current) cancelAnimationFrame(returnAnimRef.current);
     };
   }, [setCursorModeSync, setCompanionPosSync, startReturnAnimation]);
@@ -260,7 +357,8 @@ export function OverlayApp() {
     if (voiceState === 'listening') {
       // User started a new turn — interrupt anything Flicky was saying.
       stopCurrentTts();
-      setDetectedElement(null);
+      setCurrentStep(null);
+      stepsRef.current = [];
       if (holdTimerRef.current) {
         clearTimeout(holdTimerRef.current);
         holdTimerRef.current = null;
@@ -275,7 +373,23 @@ export function OverlayApp() {
 
   const isNavigating = cursorMode === 'navigating';
   const isHolding = cursorMode === 'holding';
-  const showOnThisDisplay = isCursorOnThisDisplay || isNavigating || isHolding;
+
+  // Walkthrough steps are always *on* one specific display (the one the
+  // cursor was on when the screenshot was taken). Render the annotated
+  // cursor only on that display so users with multiple monitors don't
+  // see the blue cursor flying around on a screen the step isn't on.
+  const isStepOnThisDisplay = (() => {
+    if (!currentStep) return false;
+    const b = displayRef.current?.bounds;
+    if (!b) return false;
+    return (
+      currentStep.x >= b.x && currentStep.x < b.x + b.width &&
+      currentStep.y >= b.y && currentStep.y < b.y + b.height
+    );
+  })();
+
+  const showOnThisDisplay =
+    isNavigating || isHolding ? isStepOnThisDisplay : isCursorOnThisDisplay;
 
   const cursorTransition = isNavigating
     ? 'left 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), top 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)'
@@ -283,12 +397,20 @@ export function OverlayApp() {
       ? 'left 0.05s linear, top 0.05s linear'
       : 'none';
 
-  void detectedElement;
+  const showAnnotation = (isNavigating || isHolding) && isStepOnThisDisplay;
+  const isMultiStep = (currentStep?.total ?? 0) > 1;
 
   return (
     <div className="overlay-container">
       {showOnThisDisplay && (
         <>
+          {showAnnotation && (
+            <div
+              className="target-halo"
+              style={{ left: companionPos.x, top: companionPos.y }}
+            />
+          )}
+
           <div
             className={`cursor-triangle ${isNavigating || isHolding ? 'navigating' : ''}`}
             style={{
@@ -349,7 +471,7 @@ export function OverlayApp() {
             />
           )}
 
-          {(isNavigating || isHolding) && pointingPhrase && (
+          {showAnnotation && (
             <div
               className="pointing-bubble"
               style={{
@@ -357,10 +479,41 @@ export function OverlayApp() {
                 top: companionPos.y - 8,
               }}
             >
-              {pointingPhrase}
+              {isMultiStep && (
+                <span className="step-badge">
+                  {currentStep!.step}
+                  <span className="step-badge-total">/{currentStep!.total}</span>
+                </span>
+              )}
+              <span className="bubble-text">
+                {isMultiStep ? currentStep!.label : pointingPhrase}
+              </span>
             </div>
           )}
         </>
+      )}
+
+      {typeToast && isCursorOnThisDisplay && (
+        <div className="type-toast" role="status">
+          <div className="type-toast-row">
+            <span className="type-toast-icon" aria-hidden>
+              {typeToast.autoTyped ? '⌨️' : '📋'}
+            </span>
+            <div className="type-toast-text">
+              <div className="type-toast-title">
+                {typeToast.autoTyped ? (
+                  'Typed for you'
+                ) : (
+                  <>
+                    Copied — press{' '}
+                    <kbd>{window.flicky.platform === 'darwin' ? '⌘V' : 'Ctrl+V'}</kbd> to paste
+                  </>
+                )}
+              </div>
+              <div className="type-toast-preview">&ldquo;{typeToast.preview}&rdquo;</div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
