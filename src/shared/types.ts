@@ -20,6 +20,21 @@ export interface TranscriptionResult {
   isFinal: boolean;
 }
 
+// ── Overlay / Displays ─────────────────────────────────────────────────
+
+export interface DisplayInfo {
+  id: number;
+  bounds: { x: number; y: number; width: number; height: number };
+  scaleFactor: number;
+}
+
+/**
+ * Prefix used to hand an overlay window its display info through
+ * `webPreferences.additionalArguments`, so the renderer can read it
+ * synchronously at startup instead of racing an IPC message.
+ */
+export const DISPLAY_INFO_ARG_PREFIX = '--flicky-display-info=';
+
 // ── Screen Capture ─────────────────────────────────────────────────────
 
 export interface ScreenCapture {
@@ -255,6 +270,8 @@ export interface FlickySettings {
   // Lifecycle
   onboardingComplete: boolean;
   apiKeyStatus: ApiKeyStatus;
+  /** false when OS safeStorage is unavailable (keys stored unencrypted). */
+  encryptionAvailable: boolean;
 }
 
 export const DEFAULT_SETTINGS: FlickySettings = {
@@ -284,6 +301,7 @@ export const DEFAULT_SETTINGS: FlickySettings = {
 
   onboardingComplete: false,
   apiKeyStatus: { anthropic: false, openai: false, elevenlabs: false, groq: false },
+  encryptionAvailable: true,
 };
 
 // ── IPC Channels ───────────────────────────────────────────────────────

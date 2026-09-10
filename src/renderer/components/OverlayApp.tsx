@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { VoiceState, WalkthroughStep, TypeRequest } from '../../shared/types';
+import type { VoiceState, WalkthroughStep, TypeRequest, DisplayInfo } from '../../shared/types';
 import { Waveform } from './Waveform';
 
 // Vite resolves `new URL(..., import.meta.url)` at build time and emits
@@ -40,7 +40,9 @@ export function OverlayApp() {
   const [isCursorOnThisDisplay, setIsCursorOnThisDisplay] = useState(false);
   const [typeToast, setTypeToast] = useState<TypeRequest | null>(null);
   const typeToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const displayRef = useRef<{ id: number; bounds: { x: number; y: number; width: number; height: number } } | null>(null);
+  // Seeded synchronously from the window's launch arguments so the first
+  // cursor-position message already has a coordinate space to map into.
+  const displayRef = useRef<DisplayInfo | null>(window.flicky.getDisplayInfo());
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stepsRef = useRef<WalkthroughStep[]>([]);
   const returnAnimRef = useRef<number | null>(null);
@@ -260,17 +262,10 @@ export function OverlayApp() {
   }, [cursorPos, cursorMode, setCompanionPosSync]);
 
   useEffect(() => {
-    // Pull display info eagerly. The push from main is also wired (below),
-    // but if we mount after that one-shot fires, we'd never learn our
-    // bounds and would render the cursor on every display.
-    window.flicky.getDisplayInfo().then((info) => {
-      if (info && !displayRef.current) {
-        displayRef.current = { id: info.id, bounds: info.bounds };
-      }
-    });
-
+    // displayRef is seeded synchronously from launch args above; this
+    // push also carries bounds updates after a DPI / resolution change.
     const unsubDisplayInfo = window.flicky.onDisplayInfo((info) => {
-      displayRef.current = { id: info.id, bounds: info.bounds };
+      displayRef.current = info;
     });
 
     const unsubs = [

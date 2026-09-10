@@ -14,6 +14,7 @@ import * as settingsStore from './services/settings-store';
 import { setApiKey, getApiKey, deleteApiKey } from './services/key-store';
 import { validateApiKey, validateStoredApiKey } from './services/key-validation';
 import { OllamaAPI } from './services/ollama-api';
+import { initGpuGuard, confirmGpuHealthy } from './services/gpu-guard';
 import { randomUUID } from 'crypto';
 
 // Prevent multiple instances
@@ -35,6 +36,14 @@ app.on('second-instance', () => {
     togglePanel();
   }
 });
+
+// Must run before the app is ready: the switches it may set only apply
+// pre-ready, and the GPU failure it counts happens during startup, so
+// the listener has to exist before then. Gated on the instance lock so
+// a duplicate launch that's about to quit never touches the counter.
+if (gotLock) {
+  initGpuGuard();
+}
 
 let tray: Tray | null = null;
 let panelWindow: BrowserWindow | null = null;
@@ -180,6 +189,8 @@ function sendToAll(channel: string, ...args: unknown[]): void {
 // ── App Lifecycle ──────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
+  confirmGpuHealthy();
+
   // Initialize companion manager
   companion = new CompanionManager({
     onVoiceStateChanged: (state) => {
@@ -438,19 +449,6 @@ app.whenReady().then(() => {
   ipcMain.on(IPC.RESUME_PUSH_TO_TALK_SHORTCUT, () => resumePttShortcut());
 
   // ── IPC Handlers ───────────────────────────────────────────────────
-
-  // Answer "what display am I on?" from any overlay renderer. Used to
-  // recover from the race where display-info push fires before the
-  // renderer has a listener attached.
-  ipcMain.handle('get-display-info', (e) => {
-    const display = overlayDisplayByWebContents.get(e.sender.id);
-    if (!display) return null;
-    return {
-      id: display.id,
-      bounds: display.bounds,
-      scaleFactor: display.scaleFactor,
-    };
-  });
 
   ipcMain.handle(IPC.GET_SETTINGS, () => companion.getSettings());
   ipcMain.handle(IPC.GET_PERMISSIONS, () => companion.getPermissions());

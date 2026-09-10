@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Display, screen } from 'electron';
 import path from 'path';
-import type { StreamWindowBounds } from '../shared/types';
+import { DISPLAY_INFO_ARG_PREFIX, type DisplayInfo, type StreamWindowBounds } from '../shared/types';
 
 const isDev = !app.isPackaged && process.env.VITE_DEV_SERVER === '1';
 
@@ -67,9 +67,18 @@ export function createPanelWindow(): BrowserWindow {
  */
 export const overlayDisplayByWebContents = new Map<number, Display>();
 
+function toDisplayInfo(display: Display): DisplayInfo {
+  return {
+    id: display.id,
+    bounds: display.bounds,
+    scaleFactor: display.scaleFactor,
+  };
+}
+
 /** A transparent, click-through overlay covering one display. */
 export function createOverlayWindow(display: Display): BrowserWindow {
   const { x, y, width, height } = display.bounds;
+  const displayInfo = toDisplayInfo(display);
 
   const win = new BrowserWindow({
     x,
@@ -93,6 +102,15 @@ export function createOverlayWindow(display: Display): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Hand the renderer its coordinate space up front. The IPC push
+      // below can land before React has attached its listener, so the
+      // overlay needs a value it can read synchronously on mount.
+      //
+      // Safe as plain JSON only because every DisplayInfo field is
+      // numeric, so the serialized value can never contain a space.
+      // Windows splits additionalArguments on spaces — if this type ever
+      // grows a string field (a display label, say), base64 it first.
+      additionalArguments: [DISPLAY_INFO_ARG_PREFIX + JSON.stringify(displayInfo)],
     },
   });
 
@@ -107,26 +125,23 @@ export function createOverlayWindow(display: Display): BrowserWindow {
 
   loadPage(win, 'overlay');
 
-  // Track which display this overlay covers so we can answer the
-  // renderer's `get-display-info` invocation from main. Capture the
-  // webContents id up front — by the time `closed` fires, the
-  // BrowserWindow's webContents has been destroyed and accessing
-  // `.id` on it throws "Object has been destroyed".
+  // Track which display this overlay covers so main can route cursor /
+  // walkthrough events to the right window and answer bounds changes.
+  // Capture the webContents id up front — by the time `closed` fires,
+  // the webContents has been destroyed and accessing `.id` throws.
   const wcId = win.webContents.id;
   overlayDisplayByWebContents.set(wcId, display);
   win.on('closed', () => {
     overlayDisplayByWebContents.delete(wcId);
   });
 
-  // Push display info eagerly too — when the renderer is fast enough
-  // to subscribe before this fires, it gets the info immediately and
-  // can skip the invoke roundtrip on mount.
-  win.webContents.once('did-finish-load', () => {
-    win.webContents.send('display-info', {
-      id: display.id,
-      bounds: display.bounds,
-      scaleFactor: display.scaleFactor,
-    });
+  // Belt-and-braces: the preload already reads this same snapshot out of
+  // argv on every load, including reloads, so this send is redundant
+  // rather than an update path. It stays as a cheap safety net in case
+  // the argv read ever fails. Bounds changes do NOT arrive here — the
+  // window is destroyed and recreated by rebuildOverlays instead.
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.send('display-info', displayInfo);
   });
 
   return win;

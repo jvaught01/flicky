@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC } from '../shared/types';
+import { IPC, DISPLAY_INFO_ARG_PREFIX } from '../shared/types';
 import type {
   ApiKeyName,
   ClaudeModel,
@@ -23,8 +23,27 @@ import type {
   OllamaPullProgress,
   ApiKeyValidation,
   PermissionStatus,
+  DisplayInfo,
 } from '../shared/types';
 import type { OllamaTestResult } from '../main/services/ollama-api';
+
+/**
+ * Display info handed to overlay windows via `additionalArguments`.
+ * Read once at preload time so the renderer never has to wait for IPC
+ * to learn its coordinate space.
+ */
+const initialDisplayInfo: DisplayInfo | null = (() => {
+  const arg = process.argv.find((a) => a.startsWith(DISPLAY_INFO_ARG_PREFIX));
+  if (!arg) return null;
+  try {
+    return JSON.parse(arg.slice(DISPLAY_INFO_ARG_PREFIX.length)) as DisplayInfo;
+  } catch (err) {
+    // Falling back to null silently would reproduce the exact bug this
+    // argument exists to fix, so make the failure visible.
+    console.warn('[Flicky] Could not parse display info from launch args:', err);
+    return null;
+  }
+})();
 
 const api = {
   // The host platform, resolved at runtime in the main process so it's
@@ -241,31 +260,13 @@ const api = {
   // ── Audio Capture (overlay ↔ main) ──────────────────────────────────
   // ── Overlay / display info ────────────────────────────────────────
   /**
-   * Pull the display info for the overlay window making the call.
-   * Lets renderers recover when the eagerly-pushed display-info event
-   * fires before their listener attached.
+   * The overlay's display, available synchronously on first paint.
+   * Null in windows that aren't overlays.
    */
-  getDisplayInfo: (): Promise<{
-    id: number;
-    bounds: { x: number; y: number; width: number; height: number };
-    scaleFactor: number;
-  } | null> => ipcRenderer.invoke('get-display-info'),
+  getDisplayInfo: (): DisplayInfo | null => initialDisplayInfo,
 
-  onDisplayInfo: (
-    cb: (info: {
-      id: number;
-      bounds: { x: number; y: number; width: number; height: number };
-      scaleFactor: number;
-    }) => void,
-  ) => {
-    const handler = (
-      _e: Electron.IpcRendererEvent,
-      info: {
-        id: number;
-        bounds: { x: number; y: number; width: number; height: number };
-        scaleFactor: number;
-      },
-    ) => cb(info);
+  onDisplayInfo: (cb: (info: DisplayInfo) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, info: DisplayInfo) => cb(info);
     ipcRenderer.on('display-info', handler);
     return () => ipcRenderer.removeListener('display-info', handler);
   },
