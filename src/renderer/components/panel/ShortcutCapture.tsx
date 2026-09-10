@@ -7,9 +7,16 @@ interface ShortcutCaptureProps {
 
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta', 'OS', 'ContextMenu']);
 
-function normalizeKey(key: string): string | null {
+function normalizeKey(key: string, code: string): string | null {
   if (MODIFIER_KEYS.has(key)) return null;
-  if (key === ' ') return 'Space';
+  // Prefer the physical key for letters/digits. With Shift held, `key`
+  // becomes the shifted glyph ("!" for 1, or a locale-specific symbol),
+  // which Electron's accelerator parser rejects — so the shortcut
+  // silently failed to save on non-US layouts / any Shift combo.
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+  if (key === ' ' || code === 'Space') return 'Space';
   if (key === 'Escape') return null;
   if (key === 'Enter' || key === 'Return') return 'Return';
   if (key === 'ArrowUp') return 'Up';
@@ -59,7 +66,7 @@ export function ShortcutCapture({ onSave, onCancel }: ShortcutCaptureProps) {
       if (e.shiftKey) parts.push('Shift');
       if (e.metaKey) parts.push('Meta');
 
-      const mainKey = normalizeKey(e.key);
+      const mainKey = normalizeKey(e.key, e.code);
       if (!mainKey) {
         setPreview(parts);
         setHasValid(false);

@@ -39,6 +39,9 @@ export function createPanelWindow(): BrowserWindow {
     transparent: false,
     backgroundColor: '#0f0f11',
     title: 'Flicky',
+    // Windows/Linux otherwise show Electron's stock "File Edit View
+    // Window Help" bar above the panel. Alt still reveals it.
+    autoHideMenuBar: true,
     webPreferences: {
       preload: getPreloadPath(),
       contextIsolation: true,

@@ -21,6 +21,8 @@ import type {
   LocalConnection,
   OllamaModelInfo,
   OllamaPullProgress,
+  ApiKeyValidation,
+  PermissionStatus,
 } from '../shared/types';
 import type { OllamaTestResult } from '../main/services/ollama-api';
 
@@ -62,7 +64,7 @@ const api = {
   playVoicePreview: (voiceId: string): void => ipcRenderer.send(IPC.PLAY_VOICE_PREVIEW, voiceId),
 
   // ── Permissions ────────────────────────────────────────────────────
-  getPermissions: (): Promise<Record<string, boolean>> => ipcRenderer.invoke(IPC.GET_PERMISSIONS),
+  getPermissions: (): Promise<PermissionStatus> => ipcRenderer.invoke(IPC.GET_PERMISSIONS),
   requestPermission: (kind: string): void => ipcRenderer.send(IPC.REQUEST_PERMISSION, kind),
 
   // ── API Keys ───────────────────────────────────────────────────────
@@ -70,6 +72,41 @@ const api = {
   deleteApiKey: (name: ApiKeyName): void => ipcRenderer.send(IPC.DELETE_API_KEY, name),
   getApiKeyStatus: (): Promise<Record<ApiKeyName, boolean>> =>
     ipcRenderer.invoke(IPC.GET_API_KEY_STATUS),
+  validateApiKey: (name: ApiKeyName, value: string): Promise<ApiKeyValidation> =>
+    ipcRenderer.invoke(IPC.VALIDATE_API_KEY, name, value),
+  validateStoredApiKey: (name: ApiKeyName): Promise<ApiKeyValidation> =>
+    ipcRenderer.invoke(IPC.VALIDATE_STORED_API_KEY, name),
+
+  // ── Setup verification ─────────────────────────────────────────────
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke(IPC.GET_APP_VERSION),
+  startPttTest: (): void => ipcRenderer.send(IPC.PTT_TEST_START),
+  stopPttTest: (): void => ipcRenderer.send(IPC.PTT_TEST_STOP),
+  startMicTest: (): void => ipcRenderer.send(IPC.MIC_TEST_START),
+  stopMicTest: (): void => ipcRenderer.send(IPC.MIC_TEST_STOP),
+  /** Overlay → main: current input level (0..1). */
+  reportMicLevel: (level: number): void => ipcRenderer.send(IPC.MIC_LEVEL, level),
+  /** Overlay → main: getUserMedia / AudioContext failure. */
+  reportMicError: (message: string): void => ipcRenderer.send(IPC.MIC_ERROR, message),
+  onPttShortcutFired: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on(IPC.PTT_SHORTCUT_FIRED, handler);
+    return () => ipcRenderer.removeListener(IPC.PTT_SHORTCUT_FIRED, handler);
+  },
+  onMicLevel: (cb: (level: number) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, level: number) => cb(level);
+    ipcRenderer.on(IPC.MIC_LEVEL, handler);
+    return () => ipcRenderer.removeListener(IPC.MIC_LEVEL, handler);
+  },
+  onMicError: (cb: (message: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, message: string) => cb(message);
+    ipcRenderer.on(IPC.MIC_ERROR, handler);
+    return () => ipcRenderer.removeListener(IPC.MIC_ERROR, handler);
+  },
+  onAiError: (cb: (message: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, message: string) => cb(message);
+    ipcRenderer.on(IPC.AI_ERROR, handler);
+    return () => ipcRenderer.removeListener(IPC.AI_ERROR, handler);
+  },
 
   // ── Memory / context ───────────────────────────────────────────────
   getMemoryStats: (): Promise<MemoryStats> => ipcRenderer.invoke(IPC.GET_MEMORY_STATS),
@@ -183,8 +220,8 @@ const api = {
     return () => ipcRenderer.removeListener(IPC.SETTINGS_CHANGED, handler);
   },
 
-  onPermissionStatus: (cb: (perms: Record<string, boolean>) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, perms: Record<string, boolean>) => cb(perms);
+  onPermissionStatus: (cb: (perms: PermissionStatus) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, perms: PermissionStatus) => cb(perms);
     ipcRenderer.on(IPC.PERMISSION_STATUS, handler);
     return () => ipcRenderer.removeListener(IPC.PERMISSION_STATUS, handler);
   },

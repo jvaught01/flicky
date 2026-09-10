@@ -17,12 +17,19 @@ function formatTokens(n: number): string {
 
 export function HomeTab({ voiceState, settings, memory, onNavigate }: HomeTabProps) {
   const { apiKeyStatus, mindProvider } = settings;
+  const localConn = (settings.localConnections ?? []).find((c) => c.enabled);
   const mindReady =
-    mindProvider === 'openai' ? apiKeyStatus.openai : apiKeyStatus.anthropic;
-  const connectedCount = [mindReady, apiKeyStatus.elevenlabs, apiKeyStatus.groq].filter(
-    Boolean,
-  ).length;
-  const ready = connectedCount === 3;
+    mindProvider === 'openai'
+      ? apiKeyStatus.openai
+      : mindProvider === 'ollama'
+        ? !!localConn
+        : apiKeyStatus.anthropic;
+  // Voice is only a requirement when the user wants spoken replies.
+  const voiceRequired = settings.speakReplies;
+  const required = [mindReady, apiKeyStatus.groq, ...(voiceRequired ? [apiKeyStatus.elevenlabs] : [])];
+  const connectedCount = required.filter(Boolean).length;
+  const ready = connectedCount === required.length;
+  const total = required.length;
 
   const modelLabel =
     mindProvider === 'openai'
@@ -31,9 +38,11 @@ export function HomeTab({ voiceState, settings, memory, onNavigate }: HomeTabPro
         : settings.selectedOpenAIModel === 'gpt-5-mini'
           ? 'GPT-5 mini'
           : 'GPT-4o'
-      : settings.selectedModel === 'claude-sonnet-4-6'
-        ? 'Claude Sonnet 4.6'
-        : 'Claude Opus 4.6';
+      : mindProvider === 'ollama'
+        ? (localConn?.activeModelId ?? localConn?.modelIds[0] ?? 'Local model')
+        : settings.selectedModel === 'claude-sonnet-4-6'
+          ? 'Claude Sonnet 4.6'
+          : 'Claude Opus 4.6';
 
   const pct = memory ? Math.round((memory.tokens / memory.tokenBudget) * 100) : 0;
 
@@ -47,7 +56,7 @@ export function HomeTab({ voiceState, settings, memory, onNavigate }: HomeTabPro
       <p className="main-lead">
         {ready
           ? 'Hold the push-to-talk shortcut from anywhere and Flicky will listen, think, and reply.'
-          : `${connectedCount} of 3 providers connected. Add the remaining keys to start talking.`}
+          : `${connectedCount} of ${total} providers connected. Add the remaining keys to start talking.`}
       </p>
 
       <div className="home-hero">
@@ -88,7 +97,7 @@ export function HomeTab({ voiceState, settings, memory, onNavigate }: HomeTabPro
                         ? 'Ready'
                         : 'Setup needed'}
               </div>
-              <div className="s">{ready ? 'all providers connected' : `${connectedCount} of 3 connected`}</div>
+              <div className="s">{ready ? 'all providers connected' : `${connectedCount} of ${total} connected`}</div>
             </div>
           </div>
         </div>
@@ -119,11 +128,11 @@ export function HomeTab({ voiceState, settings, memory, onNavigate }: HomeTabPro
       <div className="provider-summary">
         <h3>Connected providers</h3>
         <div className="provider-row">
-          <div className={`provider-logo ${mindProvider === 'openai' ? 'openai' : ''}`}>
-            {mindProvider === 'openai' ? 'Ai' : 'A'}
+          <div className={`provider-logo ${mindProvider === 'openai' ? 'openai' : mindProvider === 'ollama' ? 'local' : ''}`}>
+            {mindProvider === 'openai' ? 'Ai' : mindProvider === 'ollama' ? '⬡' : 'A'}
           </div>
           <div className="nm">
-            {mindProvider === 'openai' ? 'OpenAI' : 'Anthropic'}{' '}
+            {mindProvider === 'openai' ? 'OpenAI' : mindProvider === 'ollama' ? 'Local' : 'Anthropic'}{' '}
             <span className="purpose" style={{ marginLeft: 6 }}>· reasoning</span>
           </div>
           {mindReady ? (
@@ -139,6 +148,8 @@ export function HomeTab({ voiceState, settings, memory, onNavigate }: HomeTabPro
           </div>
           {apiKeyStatus.elevenlabs ? (
             <span className="pill-saved">Connected</span>
+          ) : !voiceRequired ? (
+            <span className="purpose">off — text only</span>
           ) : (
             <button className="goto" onClick={() => onNavigate('voice')}>Add key →</button>
           )}

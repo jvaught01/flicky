@@ -31,6 +31,7 @@ import type {
   ChatEntry,
   StreamVisibility,
   StreamWindowBounds,
+  PermissionStatus,
 } from '../shared/types';
 
 export interface CompanionCallbacks {
@@ -38,6 +39,13 @@ export interface CompanionCallbacks {
   onTranscriptUpdate: (result: TranscriptionResult) => void;
   onAiResponseChunk: (chunk: string) => void;
   onAiResponseComplete: (fullText: string) => void;
+  /**
+   * A turn failed somewhere in mic → transcription → model → TTS.
+   * Previously these only went to the console, which on a packaged
+   * Windows build means nobody ever saw them — the app just went
+   * quiet. Surfaced to the panel / stream so the user learns *why*.
+   */
+  onError: (message: string) => void;
   onWalkthrough: (walkthrough: Walkthrough | null) => void;
   /** Active step index (0-based) inside the current walkthrough, or null when idle. */
   onWalkthroughStep: (index: number | null) => void;
@@ -88,6 +96,12 @@ export class CompanionManager {
    * leave the mic running forever.
    */
   private pendingStart: Promise<void> | null = null;
+  /**
+   * Setup's mic check runs capture without a transcription provider.
+   * While true, audio chunks are dropped here; the overlay still emits
+   * level events that the panel visualises.
+   */
+  private micTestActive = false;
 
   constructor(callbacks: CompanionCallbacks) {
     this.callbacks = callbacks;
@@ -310,25 +324,45 @@ export class CompanionManager {
 
   // ── Permissions ──────────────────────────────────────────────────────
 
-  async getPermissions(): Promise<Record<string, boolean>> {
-    const perms: Record<string, boolean> = {
-      microphone: false,
-      screen: false,
-      accessibility: false,
+  async getPermissions(): Promise<PermissionStatus> {
+    const perms: PermissionStatus = {
+      microphone: true,
+      screen: true,
+      accessibility: true,
+      microphoneStatus: 'unknown',
     };
     if (process.platform === 'darwin') {
-      perms.microphone = systemPreferences.getMediaAccessStatus('microphone') === 'granted';
+      const mic = systemPreferences.getMediaAccessStatus('microphone');
+      perms.microphoneStatus = mic;
+      perms.microphone = mic === 'granted';
       perms.screen = systemPreferences.getMediaAccessStatus('screen') === 'granted';
       perms.accessibility = isAccessibilityGranted();
-    } else {
-      perms.microphone = true;
-      perms.screen = true;
-      perms.accessibility = true;
+    } else if (process.platform === 'win32') {
+      // Windows 10/11 gate desktop-app microphone access under
+      // Settings → Privacy → Microphone. When it's off, getUserMedia in
+      // the overlay fails and Flicky silently hears nothing — the #1
+      // "it doesn't work" report. Electron exposes the same status
+      // query on Windows, so surface it.
+      try {
+        const mic = systemPreferences.getMediaAccessStatus('microphone');
+        perms.microphoneStatus = mic;
+        perms.microphone = mic === 'granted' || mic === 'not-determined';
+      } catch (err) {
+        console.error('[Flicky] mic status probe failed:', err);
+      }
     }
     return perms;
   }
 
   async requestPermission(kind: string): Promise<void> {
+    if (process.platform === 'win32') {
+      if (kind === 'microphone') {
+        // Deeplink straight to the privacy pane; the toggles there are
+        // "Microphone access" and "Let desktop apps access your microphone".
+        void shell.openExternal('ms-settings:privacy-microphone');
+      }
+      return;
+    }
     if (process.platform !== 'darwin') return;
 
     if (kind === 'microphone') {
@@ -407,6 +441,22 @@ export class CompanionManager {
     await this.stopRecordingAndProcess();
   }
 
+  // ── Mic check (setup) ────────────────────────────────────────────────
+
+  startMicTest(): void {
+    if (this.isRecording || this.micTestActive) return;
+    this.micTestActive = true;
+    this.callbacks.onStartAudioCapture();
+  }
+
+  stopMicTest(): void {
+    if (!this.micTestActive) return;
+    this.micTestActive = false;
+    // Don't yank the mic out from under a real PTT turn that started
+    // while the test was running.
+    if (!this.isRecording) this.callbacks.onStopAudioCapture();
+  }
+
   private clearWalkthroughTimers(): void {
     for (const t of this.walkthroughTimers) clearTimeout(t);
     this.walkthroughTimers = [];
@@ -472,11 +522,16 @@ export class CompanionManager {
 
     try {
       await this.transcriptionProvider.start();
+      // A setup mic check may already hold the capture open; starting
+      // again is harmless (the overlay just re-opens the gate).
+      this.micTestActive = false;
       this.callbacks.onStartAudioCapture();
     } catch (err) {
       console.error('Failed to start transcription:', err);
       this.setVoiceState('idle');
       this.isRecording = false;
+      this.transcriptionProvider = null;
+      this.callbacks.onError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -490,7 +545,21 @@ export class CompanionManager {
       return;
     }
 
-    const result = await this.transcriptionProvider.stop();
+    // A failed upload (bad Groq key, offline, 4xx) used to throw straight
+    // out of here — nothing caught it, so the voice state stayed stuck on
+    // 'listening' and the next PTT press did nothing. Contain it.
+    let result: TranscriptionResult;
+    try {
+      result = await this.transcriptionProvider.stop();
+    } catch (err) {
+      console.error('Transcription failed:', err);
+      this.transcriptionProvider = null;
+      this.setVoiceState('idle');
+      this.callbacks.onError(
+        `couldn't transcribe that — ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
     this.transcriptionProvider = null;
 
     if (!result.text.trim()) {
@@ -644,6 +713,7 @@ export class CompanionManager {
         console.error('Mind provider error:', err);
         analytics.trackResponseError(err.message);
         this.setVoiceState('idle');
+        this.callbacks.onError(err.message);
       },
     };
 
@@ -705,6 +775,7 @@ export class CompanionManager {
   }
 
   handleAudioChunk(buffer: Buffer): void {
+    if (!this.isRecording) return;
     this.transcriptionProvider?.sendAudio(buffer);
   }
 

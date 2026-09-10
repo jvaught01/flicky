@@ -59,6 +59,9 @@ export function OverlayApp() {
   const micStartingRef = useRef(false);
   /** set by stopMic so a pending start can bail before attaching. */
   const micStopRequestedRef = useRef(false);
+  /** Peak RMS since the last level report; reported ~20×/s to main. */
+  const micPeakRef = useRef(0);
+  const micLevelSentAtRef = useRef(0);
 
   // ── TTS playback (cancelable) ───────────────────────────────────────
   const ttsRef = useRef<{ audio: HTMLAudioElement; url: string } | null>(null);
@@ -95,6 +98,25 @@ export function OverlayApp() {
         const source = ctx.createMediaStreamSource(stream);
         const node = new AudioWorkletNode(ctx, 'capture-processor');
         node.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
+          // Cheap RMS so the panel's mic check (and any future meter)
+          // can show that sound is actually arriving. Throttled to
+          // ~20 Hz; the chunk itself is forwarded untouched.
+          const pcm = new Int16Array(e.data);
+          let sum = 0;
+          for (let i = 0; i < pcm.length; i++) {
+            const s = pcm[i] / 32768;
+            sum += s * s;
+          }
+          const rms = pcm.length ? Math.sqrt(sum / pcm.length) : 0;
+          if (rms > micPeakRef.current) micPeakRef.current = rms;
+          const now = performance.now();
+          if (now - micLevelSentAtRef.current > 50) {
+            micLevelSentAtRef.current = now;
+            // Speech RMS sits around 0.05–0.3; scale so normal talking
+            // fills most of the meter.
+            window.flicky.reportMicLevel(Math.min(1, micPeakRef.current * 4));
+            micPeakRef.current = 0;
+          }
           window.flicky.sendAudioChunk(e.data);
         };
         // Pull-graph: source → worklet → destination. The worklet
@@ -109,6 +131,19 @@ export function OverlayApp() {
         return node;
       } catch (err) {
         console.error('[Flicky] Mic capture init failed:', err);
+        // Nobody reads the overlay's devtools console on a packaged
+        // build. Translate the DOMException into something a person can
+        // act on and hand it to main, which shows it in the panel.
+        const e = err as { name?: string; message?: string };
+        const friendly =
+          e.name === 'NotAllowedError' || e.name === 'SecurityError'
+            ? 'microphone access is blocked for Flicky. Allow it in your OS privacy settings.'
+            : e.name === 'NotFoundError' || e.name === 'OverconstrainedError'
+              ? 'no microphone was found. Plug one in or pick a default input device in your sound settings.'
+              : e.name === 'NotReadableError'
+                ? 'the microphone is busy or unreadable — another app may be holding it.'
+                : `${e.name ?? 'Error'}: ${e.message ?? String(err)}`;
+        window.flicky.reportMicError(friendly);
         return null;
       } finally {
         micStartingRef.current = false;

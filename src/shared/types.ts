@@ -128,6 +128,24 @@ export interface ApiKeyStatus {
   groq: boolean;
 }
 
+/** Result of a live round-trip against a provider with a candidate key. */
+export interface ApiKeyValidation {
+  ok: boolean;
+  /** Human-readable reason when `ok` is false. */
+  error?: string;
+}
+
+/** OS-level permission snapshot. Values are true when granted or when
+ *  the platform has no such gate. */
+export interface PermissionStatus {
+  microphone: boolean;
+  screen: boolean;
+  accessibility: boolean;
+  /** Raw OS status for the mic so the UI can distinguish "not asked yet"
+   *  from "explicitly blocked". */
+  microphoneStatus: 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+}
+
 // ── Voice / TTS ────────────────────────────────────────────────────────
 
 /** Built-in voice presets we curate for the voice picker. */
@@ -285,8 +303,28 @@ export const IPC = {
   PERMISSION_STATUS: 'permission-status',
   MEMORY_STATS: 'memory-stats',
   CHAT_ENTRY_ADDED: 'chat-entry-added',
+  /** A turn failed (bad key, network, provider error). Payload: message. */
+  AI_ERROR: 'ai-error',
+  /** The push-to-talk accelerator fired (used by setup to verify it). */
+  PTT_SHORTCUT_FIRED: 'ptt-shortcut-fired',
+  /** Mic input level 0..1 while capture is active (throttled). */
+  MIC_LEVEL: 'mic-level',
+  /** getUserMedia / AudioContext failed in the capture renderer. */
+  MIC_ERROR: 'mic-error',
 
   // Renderer → Main
+  /** Round-trip a candidate key against its provider. */
+  VALIDATE_API_KEY: 'validate-api-key',
+  /** Same check against the key already in the encrypted store. */
+  VALIDATE_STORED_API_KEY: 'validate-stored-api-key',
+  GET_APP_VERSION: 'get-app-version',
+  /** While active, the PTT shortcut only emits PTT_SHORTCUT_FIRED and
+   *  does not start recording — lets setup verify the binding safely. */
+  PTT_TEST_START: 'ptt-test-start',
+  PTT_TEST_STOP: 'ptt-test-stop',
+  /** Run mic capture without transcription so setup can show levels. */
+  MIC_TEST_START: 'mic-test-start',
+  MIC_TEST_STOP: 'mic-test-stop',
   PUSH_TO_TALK_START: 'push-to-talk-start',
   PUSH_TO_TALK_STOP: 'push-to-talk-stop',
   SET_MODEL: 'set-model',

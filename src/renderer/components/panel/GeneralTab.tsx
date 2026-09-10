@@ -217,6 +217,15 @@ export function GeneralTab({ settings, memory }: GeneralTabProps) {
         </div>
         <div className="row">
           <div className="row-main">
+            <div className="row-t">Setup</div>
+            <div className="row-s">re-check permissions, keys, the shortcut and your mic step by step</div>
+          </div>
+          <button className="btn xs" onClick={() => window.flicky.replayOnboarding()}>
+            Run setup again
+          </button>
+        </div>
+        <div className="row">
+          <div className="row-main">
             <div className="row-t">Stream window</div>
             <div className="row-s">floating transparent panel that shows the live Q/A — scroll, select, copy</div>
           </div>

@@ -86,8 +86,8 @@ export class OpenAIWhisperProvider implements TranscriptionProvider {
   onPartialTranscript?: (text: string) => void;
 
   async start(): Promise<void> {
-    const apiKey = getApiKey('anthropic'); // Uses OpenAI-compatible key — user may supply separately
-    if (!apiKey) throw new Error('API key not configured for transcription.');
+    const apiKey = getApiKey('openai');
+    if (!apiKey) throw new Error('OpenAI API key not configured. Add it in the Flicky panel.');
     this.audioChunks = [];
   }
 
@@ -108,7 +108,7 @@ export class OpenAIWhisperProvider implements TranscriptionProvider {
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${getApiKey('anthropic')}`, // Would need a separate OpenAI key in production
+        Authorization: `Bearer ${getApiKey('openai')}`,
       },
       body: formData,
     });

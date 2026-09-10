@@ -12,6 +12,7 @@ import { AUDIO_IPC } from './services/audio-capture';
 import * as chatHistory from './services/chat-history-store';
 import * as settingsStore from './services/settings-store';
 import { setApiKey, getApiKey, deleteApiKey } from './services/key-store';
+import { validateApiKey, validateStoredApiKey } from './services/key-validation';
 import { OllamaAPI } from './services/ollama-api';
 import { randomUUID } from 'crypto';
 
@@ -20,6 +21,20 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 }
+// Flicky lives in the tray, so on Windows the natural thing to do when
+// you can't find it is to double-click the shortcut again. Without this
+// handler that second launch just exited and nothing visible happened —
+// which reads as "the app is broken". Surface the panel instead.
+app.on('second-instance', () => {
+  if (!companion) return;
+  if (panelWindow && !panelWindow.isDestroyed()) {
+    if (panelWindow.isMinimized()) panelWindow.restore();
+    panelWindow.show();
+    panelWindow.focus();
+  } else {
+    togglePanel();
+  }
+});
 
 let tray: Tray | null = null;
 let panelWindow: BrowserWindow | null = null;
@@ -62,9 +77,15 @@ function createTrayIcon(): Electron.NativeImage {
   const size32 = path.join(assetRoot, 'icons', '32x32.png');
   const size16 = path.join(assetRoot, 'icons', '16x16.png');
 
-  const primary = process.platform === 'darwin' ? size32 : size16;
-
   try {
+    // Windows renders tray icons from a multi-size .ico crisply at any
+    // DPI; a 16px PNG gets upscaled and blurry at 125%/150% scaling.
+    if (process.platform === 'win32') {
+      const ico = nativeImage.createFromPath(path.join(assetRoot, 'icon.ico'));
+      if (!ico.isEmpty()) return ico;
+    }
+
+    const primary = process.platform === 'darwin' ? size32 : size16;
     const img = nativeImage.createFromPath(primary);
     if (img.isEmpty()) throw new Error('empty tray icon image');
 
@@ -175,6 +196,10 @@ app.whenReady().then(() => {
       sendToPanel(IPC.AI_RESPONSE_COMPLETE, text);
       sendToStream(IPC.AI_RESPONSE_COMPLETE, text);
     },
+    onError: (message) => {
+      sendToPanel(IPC.AI_ERROR, message);
+      sendToStream(IPC.AI_ERROR, message);
+    },
     onWalkthrough: (w) => {
       walkthroughActive = !!w;
       // The walkthrough plays on exactly one display — the cursor
@@ -260,6 +285,14 @@ app.whenReady().then(() => {
   rebuildOverlays();
   screen.on('display-added', () => syncOverlaysToDisplays());
   screen.on('display-removed', () => syncOverlaysToDisplays());
+  // Resolution / DPI / arrangement changes (docking a laptop, changing
+  // scaling in Settings) keep the same display ids but move the bounds.
+  // Without this the overlay stayed at the stale rect, so the blue
+  // cursor pointed at the wrong spot or lived off-screen entirely.
+  screen.on('display-metrics-changed', (_e, display, changed) => {
+    if (!changed.some((c) => c === 'bounds' || c === 'scaleFactor' || c === 'workArea')) return;
+    syncOverlayBounds(display);
+  });
 
   // Stream window is created lazily — the default `streamVisibility:'off'`
   // means a fresh-install user used to have an entire Chromium renderer
@@ -269,10 +302,14 @@ app.whenReady().then(() => {
   // Sync the OS login-item state with our stored preference. Handles
   // the case where the user disables the login item externally (e.g.
   // via System Settings) — next launch reconciles the two.
-  try {
-    app.setLoginItemSettings({ openAtLogin: companion.getSettings().launchAtLogin });
-  } catch (err) {
-    console.error('[Flicky] initial setLoginItemSettings failed:', err);
+  // Skipped in dev: unpackaged it would register the bare electron
+  // binary as a startup item.
+  if (app.isPackaged) {
+    try {
+      app.setLoginItemSettings({ openAtLogin: companion.getSettings().launchAtLogin });
+    } catch (err) {
+      console.error('[Flicky] initial setLoginItemSettings failed:', err);
+    }
   }
 
   // Register global push-to-talk shortcut.
@@ -290,9 +327,30 @@ app.whenReady().then(() => {
   const isMac = process.platform === 'darwin';
   let pttDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let pttActive = false;
+  /** Number of accelerator fires seen during the current hold. */
+  let pttFireCount = 0;
   let currentShortcut = '';
+  /** Setup's "press your shortcut" check — see IPC.PTT_TEST_START. */
+  let pttTestMode = false;
+
+  // 'hold' timing. The OS doesn't start auto-repeating a held key until
+  // its repeat-delay elapses — on Windows that's 250 ms at the fastest
+  // setting and 1 s at the slowest (default ≈ 500 ms). The old fixed
+  // 250 ms silence window therefore expired *before the first repeat
+  // ever arrived*: recording stopped after a quarter second, a useless
+  // sliver of audio went to Whisper, then the repeat kicked in and
+  // started a brand-new turn — over and over while the key was held.
+  // Give the first repeat a generous window; once repeats are flowing
+  // (~30 Hz) a tight window is plenty.
+  const PTT_HOLD_INITIAL_GRACE_MS = 1100;
+  const PTT_HOLD_REPEAT_GRACE_MS = 250;
 
   const pttHandler = () => {
+    // Setup verification: prove the binding reaches us without
+    // actually opening the mic.
+    sendToPanel(IPC.PTT_SHORTCUT_FIRED);
+    if (pttTestMode) return;
+
     const mode = isMac ? 'toggle' : companion.getSettings().pttMode;
 
     if (mode === 'toggle') {
@@ -321,14 +379,21 @@ app.whenReady().then(() => {
     }
     if (!pttActive) {
       pttActive = true;
-      companion.startPushToTalk();
+      pttFireCount = 0;
+      void companion.startPushToTalk();
     }
+    pttFireCount += 1;
+    const grace = pttFireCount === 1 ? PTT_HOLD_INITIAL_GRACE_MS : PTT_HOLD_REPEAT_GRACE_MS;
     pttDebounceTimer = setTimeout(() => {
       pttActive = false;
+      pttFireCount = 0;
       pttDebounceTimer = null;
-      companion.stopPushToTalk();
-    }, 250);
+      void companion.stopPushToTalk();
+    }, grace);
   };
+
+  ipcMain.on(IPC.PTT_TEST_START, () => { pttTestMode = true; });
+  ipcMain.on(IPC.PTT_TEST_STOP, () => { pttTestMode = false; });
 
   function registerPttShortcut(accelerator: string): boolean {
     const previous = currentShortcut;
@@ -389,6 +454,20 @@ app.whenReady().then(() => {
 
   ipcMain.handle(IPC.GET_SETTINGS, () => companion.getSettings());
   ipcMain.handle(IPC.GET_PERMISSIONS, () => companion.getPermissions());
+  ipcMain.handle(IPC.GET_APP_VERSION, () => app.getVersion());
+  ipcMain.handle(IPC.VALIDATE_API_KEY, (_e, name, key: string) => validateApiKey(name, key));
+  ipcMain.handle(IPC.VALIDATE_STORED_API_KEY, (_e, name) => validateStoredApiKey(name));
+
+  // Setup mic check: capture runs, levels flow to the panel, nothing is
+  // transcribed. The overlay owns the mic; relay its telemetry here.
+  ipcMain.on(IPC.MIC_TEST_START, () => companion.startMicTest());
+  ipcMain.on(IPC.MIC_TEST_STOP, () => companion.stopMicTest());
+  ipcMain.on(IPC.MIC_LEVEL, (_e, level: number) => sendToPanel(IPC.MIC_LEVEL, level));
+  ipcMain.on(IPC.MIC_ERROR, (_e, message: string) => {
+    console.error('[Flicky] mic capture error from overlay:', message);
+    sendToPanel(IPC.MIC_ERROR, message);
+    sendToPanel(IPC.AI_ERROR, `microphone unavailable — ${message}`);
+  });
 
   ipcMain.on(IPC.SET_MODEL, (_e, model) => companion.setModel(model));
   ipcMain.on(IPC.SET_OPENAI_MODEL, (_e, model) => companion.setOpenAIModel(model));
@@ -560,18 +639,28 @@ app.on('window-all-closed', () => {
 
 // ── Window Management ──────────────────────────────────────────────────
 
+/** When the panel last lost focus — see togglePanel. */
+let panelBlurredAt = 0;
+
 function togglePanel(): void {
   if (panelWindow && !panelWindow.isDestroyed()) {
-    if (panelWindow.isVisible() && panelWindow.isFocused()) {
+    // On Windows, clicking the tray icon blurs the panel *before* our
+    // click handler runs, so `isFocused()` was always false and the tray
+    // could only ever show the panel, never hide it. Treat a blur in the
+    // last few hundred ms as "was focused when you clicked".
+    const recentlyFocused = Date.now() - panelBlurredAt < 400;
+    if (panelWindow.isVisible() && !panelWindow.isMinimized() && (panelWindow.isFocused() || recentlyFocused)) {
       panelWindow.hide();
       return;
     }
+    if (panelWindow.isMinimized()) panelWindow.restore();
     panelWindow.show();
     panelWindow.focus();
     return;
   }
 
   panelWindow = createPanelWindow();
+  panelWindow.on('blur', () => { panelBlurredAt = Date.now(); });
   panelWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
     console.error('[Flicky] Panel FAILED to load:', code, desc, url);
   });
@@ -641,6 +730,22 @@ function syncOverlaysToDisplays(): void {
   // route voice-state / element-detected events into their renderers
   // without a visible window on screen.
   applyOverlayVisibility(companion.getSettings().isClickyCursorEnabled);
+}
+
+/** Move an existing overlay to its display's new bounds after a metrics change. */
+function syncOverlayBounds(display: Electron.Display): void {
+  for (const win of overlayWindows) {
+    if (win.isDestroyed()) continue;
+    const tracked = overlayDisplayByWebContents.get(win.webContents.id);
+    if (!tracked || tracked.id !== display.id) continue;
+    win.setBounds(display.bounds);
+    overlayDisplayByWebContents.set(win.webContents.id, display);
+    win.webContents.send('display-info', {
+      id: display.id,
+      bounds: display.bounds,
+      scaleFactor: display.scaleFactor,
+    });
+  }
 }
 
 function applyOverlayVisibility(enabled: boolean): void {
